@@ -15,6 +15,7 @@ import { checkAnswer, checkRoots, isExpandedForm } from '../js/math/check.js';
 import { GENERATORS, generateExercise } from '../js/curriculum/generators.js';
 import { MISCONCEPTIONS } from '../js/curriculum/misconceptions.js';
 import { SKILLS, topoOrder } from '../js/curriculum/skills.js';
+import { renderExpr, renderInline } from '../js/math/render.js';
 import { LESSONS } from '../js/curriculum/lessons.js';
 import { emptyState, updateSkill, selectNextSkill, isUnlocked, MASTERY_THRESHOLD } from '../js/learn/mastery.js';
 import { diagnose } from '../js/learn/diagnose.js';
@@ -148,9 +149,34 @@ ok('פתרון אחד בלבד נדחה', checkRoots('3', roots).reason === 'roo
 ok('פתרונות שגויים נדחים', checkRoots('5, -3', roots).reason === 'value');
 
 // -------------------------------------------------------------- הגנרטורים
+// -------------------------------------------------------------- תצוגה
+group('תצוגה - הסימן ^ לעולם לא מגיע למסך');
+const noCaret = (html) => !html.includes('^');
+ok('חזקה מספרית: x^2', renderExpr('x^2').includes('<sup>2</sup>'));
+ok('חזקה עם אות: x^m', renderInline('x^m · x^n').includes('<sup>m</sup>'));
+ok('חזקה עם ביטוי: x^(m+n)', renderInline('x^(m+n)').includes('<sup>m+n</sup>'));
+ok('חזקה עם ביטוי מספרי: x^(2+3)', renderInline('x^(2+3)').includes('<sup>2+3</sup>'));
+ok('הנוסחה המלאה נקייה מ-^', noCaret(renderInline('x^m · x^n = x^(m+n)')));
+ok('משפט עברי עם חזקה נקי מ-^', noCaret(renderInline('החזקה x^2 היא x כפול x')));
+ok('טקסט עברי עם חזקה לא נכפה ל-LTR', !renderInline('החזקה x^2 היא').includes('dir="ltr"'));
+ok('חזקה שלילית x^-1', renderInline('x^-1').includes('<sup>-1</sup>'));
+ok('ביטוי מפורק נשמר: (x+3)^2', noCaret(renderExpr('(x+3)^2')) && renderExpr('(x+3)^2').includes('<sup>2</sup>'));
+ok('מינוס טיפוגרפי אחרי חזקה', renderExpr('x^2 - 9').includes('−'));
+ok('בריחת HTML נשמרת', renderInline('<b>x</b>').includes('&lt;b&gt;'));
+ok('סוגריים לא סגורים אחרי ^ לא מפילים', typeof renderInline('x^(m+n') === 'string');
+ok('כל הנוסחאות בשיעורים נקיות מ-^ אחרי רינדור', (() => {
+  for (const lesson of Object.values(LESSONS)) {
+    for (const b of lesson.body) {
+      const texts = b.type === 'example' ? [b.question, b.answer, ...b.steps] : [b.text];
+      for (const t of texts) if (!noCaret(renderInline(t))) return false;
+    }
+  }
+  return true;
+})());
+
 group('גנרטורים - סריקה מלאה');
 const SEEDS = 120;
-let genFail = 0, wrongFail = 0, diagFail = 0, total = 0;
+let genFail = 0, wrongFail = 0, diagFail = 0, renderFail = 0, total = 0;
 const failures = [];
 
 for (const skill of SKILLS) {
@@ -167,6 +193,14 @@ for (const skill of SKILLS) {
       } catch (err) {
         genFail++; failures.push(`${skill.id} L${level} #${s}: יצירה נכשלה - ${err.message}`);
         continue;
+      }
+
+      // 0. שום תרגיל לא מציג את הסימן ^ על המסך
+      for (const [what, text] of [['השאלה', exercise.exprText], ['התשובה', exercise.answerText], ['הכלל', exercise.rule]]) {
+        if (text && !noCaret(renderExpr(text))) {
+          renderFail++;
+          failures.push(`${skill.id} L${level}: ${what} "${text}" מוצגת עם הסימן ^`);
+        }
       }
 
       // 1. התשובה שהגנרטור מכריז עליה חייבת לעבור את הבודק
@@ -201,6 +235,7 @@ for (const skill of SKILLS) {
 ok(`כל ${total} התרגילים נוצרו ותשובתם עוברת את הבודק`, genFail === 0, `${genFail} כשלים`);
 ok('אין "תשובה שגויה" שהיא בעצם נכונה', wrongFail === 0, `${wrongFail} כשלים`);
 ok('כל התפיסות המוטעות החזויות מאובחנות', diagFail === 0, `${diagFail} כשלים`);
+ok('אף תרגיל לא מציג את הסימן ^', renderFail === 0, `${renderFail} כשלים`);
 
 group('שלמות התוכן');
 const usedMis = new Set();

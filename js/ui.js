@@ -23,17 +23,32 @@ export function toast(message, kind = '') {
 }
 
 /**
- * סרגל סמלים מתמטיים. חוסך לתלמידים את החיפוש אחרי ^ במקלדת, ובעיקר מונע
- * את מקור התסכול הנפוץ - להקליד תשובה נכונה ולקבל שגיאת תחביר.
+ * סרגל סמלים מתמטיים. מונע את מקור התסכול הנפוץ - להקליד תשובה נכונה
+ * ולקבל שגיאת תחביר.
+ *
+ * label הוא מה שהתלמיד/ה רואה, insert הוא מה שנכנס לשדה. ההפרדה הזו מאפשרת
+ * להציג "xⁿ" במקום את התו הגולמי ^ : הכפתור מראה מה הוא *עושה*, לא איזה תו
+ * הוא מקליד.
  */
-export const SYMBOL_KEYS = ['x', '²', '³', '^', '(', ')', '+', '−', '·', '/'];
+export const SYMBOL_KEYS = [
+  { label: 'x', insert: 'x' },
+  { label: 'x²', insert: '²' },
+  { label: 'x³', insert: '³' },
+  { label: 'xⁿ', insert: '^' },
+  { label: '(', insert: '(' },
+  { label: ')', insert: ')' },
+  { label: '+', insert: '+' },
+  { label: '−', insert: '-' },
+  { label: '·', insert: '*' },
+  { label: '/', insert: '/' },
+];
 
 // dir="ltr" על כל כפתור הוא חובה ולא קישוט: בהקשר RTL הדפדפן *משקף* סוגריים,
 // כך שכפתור שהתווית שלו "(" מצויר על המסך כ-")". התו שנכנס לשדה היה נכון תמיד,
 // אבל התלמיד ראה כפתור הפוך. הבידוד ל-LTR מצייר אותם כפי שהם.
 export function symbolBar() {
   return `<div class="symbol-bar">${SYMBOL_KEYS
-    .map(k => `<button type="button" class="sym" dir="ltr" data-sym="${escapeHtml(k)}">${escapeHtml(k)}</button>`)
+    .map(k => `<button type="button" class="sym" dir="ltr" data-insert="${escapeHtml(k.insert)}">${escapeHtml(k.label)}</button>`)
     .join('')}</div>`;
 }
 
@@ -41,13 +56,14 @@ export function symbolBar() {
 export function wireSymbolBar(root, input) {
   root.querySelectorAll('button.sym').forEach(btn => {
     btn.addEventListener('click', () => {
-      const sym = btn.dataset.sym === '−' ? '-' : btn.dataset.sym === '·' ? '*' : btn.dataset.sym;
+      const sym = btn.dataset.insert;
       const start = input.selectionStart ?? input.value.length;
       const end = input.selectionEnd ?? input.value.length;
       input.value = input.value.slice(0, start) + sym + input.value.slice(end);
       const caret = start + sym.length;
       input.focus();
       input.setSelectionRange(caret, caret);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
     });
   });
 }

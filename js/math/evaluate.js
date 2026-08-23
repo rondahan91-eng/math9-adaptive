@@ -26,7 +26,7 @@ export function astToRatFunc(node) {
     case 'pow': {
       const expPoly = rfToPoly(astToRatFunc(node.b));
       const expConst = expPoly ? constOf(expPoly) : null;
-      if (expConst === null) throw new Error('בשלב הזה החזקה חייבת להיות מספר שלם (למשל x^2)');
+      if (expConst === null) throw new Error('בשלב הזה המעריך של החזקה חייב להיות מספר שלם, למשל x²');
       if (!isInteger(expConst) || expConst.n < 0) {
         throw new Error('בשלב הזה החזקה חייבת להיות מספר שלם אי-שלילי');
       }

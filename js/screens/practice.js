@@ -11,7 +11,7 @@ import { SKILL_BY_ID } from '../curriculum/skills.js';
 import { generateExercise } from '../curriculum/generators.js';
 import { misconception } from '../curriculum/misconceptions.js';
 import { checkAnswer, checkRoots } from '../math/check.js';
-import { renderExpr } from '../math/render.js';
+import { renderExpr, renderInline } from '../math/render.js';
 import { diagnose } from '../learn/diagnose.js';
 import {
   selectNextSkill, levelFor, updateSkill, recordMisconception,
@@ -131,7 +131,8 @@ export function renderPractice(root, ctx, params = {}) {
       paint(`<div class="feedback warn">
         <strong>לא הצלחתי לקרוא את מה שכתבת</strong>
         ${escapeHtml(result.message || '')}<br>
-        <span class="muted">אפשר לכתוב חזקה כ-x^2, וכפל אפשר לכתוב פשוט כ-3x או (x+1)(x-2).</span>
+        <span class="muted">אפשר להיעזר בכפתורי הסמלים שמתחת לשדה.
+        כפל אפשר לכתוב פשוט: 3x, או (x+1)(x-2).</span>
       </div>`);
       return;
     }
@@ -172,7 +173,7 @@ export function renderPractice(root, ctx, params = {}) {
     paint(`<div class="feedback err">
       <strong>${escapeHtml(info ? info.label : 'זה עדיין לא נכון')}</strong>
       ${result.message ? escapeHtml(result.message) : 'בדקו שוב את הצעד שבו יש את הטעות.'}
-      ${attempts >= 2 ? `<br><span class="muted">רמז לכלל: ${escapeHtml(ex.rule || '')}</span>` : ''}
+      ${attempts >= 2 ? `<br><span class="muted">רמז לכלל: ${renderInline(ex.rule || '')}</span>` : ''}
     </div>`);
   }
 
@@ -187,7 +188,7 @@ export function renderPractice(root, ctx, params = {}) {
     paint(`<div class="feedback warn">
       <strong>הפתרון</strong>
       ${renderExpr(ex.exprText)} = ${renderExpr(ex.answerText)}
-      <br><span class="muted">${escapeHtml(ex.rule || '')}</span>
+      <br><span class="muted">${renderInline(ex.rule || '')}</span>
     </div>`);
     if (ctx.tutor.available) askTutor('explain');
   }
@@ -231,9 +232,11 @@ export function renderPractice(root, ctx, params = {}) {
       tutorBox.innerHTML = hintUnavailableHtml(res.reason);
       return;
     }
+    // גם אם המודל כתב x^2 למרות ההנחיה, renderInline יהפוך את זה לכתב עילי
+    const body = res.text.split(/\n+/).map(line => renderInline(line)).join('<br>');
     tutorBox.innerHTML = `<div class="tutor">
       <div class="tutor-label">מורה פרטי</div>
-      ${escapeHtml(res.text).replace(/\n+/g, '<br>')}
+      ${body}
     </div>`;
   }
 

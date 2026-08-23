@@ -51,7 +51,7 @@ function tokenize(src) {
     // סיבה פדגוגית לפסול תשובה נכונה רק בגלל Shift.
     if (/[a-zA-Z]/.test(ch)) { tokens.push({ type: 'var', value: ch.toLowerCase(), pos: i }); i++; continue; }
     if ('+-*/^()'.includes(ch)) { tokens.push({ type: ch, pos: i }); i++; continue; }
-    throw new Error(`התו "${ch}" אינו מוכר. אפשר להשתמש במספרים, אותיות, + - * / ^ וסוגריים.`);
+    throw new Error(`התו "${ch}" אינו מוכר. אפשר להשתמש במספרים, באותיות, בפעולות + − · / ובסוגריים, או בכפתורי הסמלים.`);
   }
   return tokens;
 }

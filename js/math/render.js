@@ -3,6 +3,9 @@
 // ==========================================================================
 // בלי ספריות חיצוניות (בלי KaTeX/MathJax): רק <sup> ותווים מתמטיים. כך הלומדה
 // עובדת גם בלי אינטרנט ובלי CDN חסום ברשת בית הספר.
+//
+// כלל ברזל: הסימן ^ לעולם לא מגיע למסך. הוא צורת *הקלדה* בלבד, ובתצוגה הוא
+// תמיד הופך לכתב עילי - גם כשהמעריך הוא אות (x^m) וגם כשהוא ביטוי (x^(m+n)).
 
 import { sortedTerms, monoKey } from './poly.js';
 import { ratToString } from './rational.js';
@@ -11,29 +14,76 @@ const escapeHtml = (s) => String(s).replace(/[&<>"']/g, c => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
 
-/**
- * ממיר מחרוזת ביטוי לתצוגה. מיועד למחרוזות שאנחנו כתבנו (שאלות, פתרונות),
- * ולכן שומר על הצורה המקורית - (x+3)^2 יוצג כ-(x+3)² ולא ייפתח.
- */
-export function renderExpr(text) {
-  let html = escapeHtml(text);
-  html = html.replace(/\^\(?(-?\d+)\)?/g, (_, exp) => `<sup>${exp}</sup>`);
-  html = html.replace(/\*/g, '·');
-  html = html.replace(/(\d|\)|[a-zA-Z])\s*·\s*(?=[a-zA-Z(])/g, '$1');
-  html = html.replace(/\s*\+\s*/g, ' + ');
+/** ניקוי טיפוגרפי על הטקסט הגולמי, לפני פיצול לכתב עילי. */
+function typography(raw) {
+  let s = raw.replace(/\*/g, '·');
+  // כפל מרומז נקרא טוב יותר בלי נקודה: 2·(x+3) -> 2(x+3)
+  s = s.replace(/(\d|\)|[a-zA-Z])\s*·\s*(?=[a-zA-Z(])/g, '$1');
+  s = s.replace(/\s*\+\s*/g, ' + ');
   // מינוס בין שני איברים הופך למינוס טיפוגרפי; מינוס אונרי בתחילת ביטוי נשאר
-  html = html.replace(/([\w)²³])\s*-\s*/g, '$1 − ');
-  return `<span class="expr" dir="ltr">${html}</span>`;
+  s = s.replace(/([\w)²³])\s*-\s*/g, '$1 − ');
+  return s;
 }
 
 /**
- * טקסט מעורב עברית+מתמטיקה (שלבי פתרון, הערות). ממיר ^n לחזקה עילית, אבל
- * *לא* כופה כיוון LTR - אחרת משפט עברי שיש בו ביטוי היה מוצג הפוך.
- * רק אם אין בטקסט אות עברית כלל, הוא נחשב ביטוי טהור ומקבל dir=ltr.
+ * הופך כל ^ לכתב עילי. תומך בשלוש צורות:
+ *   x^2      -> ספרות
+ *   x^m      -> אות
+ *   x^(m+n)  -> ביטוי בסוגריים (הסוגריים נעלמים)
+ * ^ בודד בלי מעריך נשאר כפי שהוא, כדי לא לאבד תוכן.
+ */
+function superscriptify(raw) {
+  let out = '';
+  let plain = '';
+  let i = 0;
+  const flush = () => { out += escapeHtml(plain); plain = ''; };
+
+  while (i < raw.length) {
+    if (raw[i] !== '^') { plain += raw[i++]; continue; }
+    i++;
+    let body = '';
+
+    if (raw[i] === '(') {
+      let depth = 0, j = i, closed = false;
+      for (; j < raw.length; j++) {
+        if (raw[j] === '(') depth++;
+        else if (raw[j] === ')') { depth--; if (depth === 0) { closed = true; j++; break; } }
+      }
+      if (closed) { body = raw.slice(i + 1, j - 1); i = j; }
+    }
+
+    if (!body) {
+      let j = i;
+      if (raw[j] === '-' || raw[j] === '+') j++;
+      while (j < raw.length && /[0-9a-zA-Z]/.test(raw[j])) j++;
+      body = raw.slice(i, j);
+      i = j;
+    }
+
+    if (!body) { plain += '^'; continue; }
+    flush();
+    out += `<sup>${escapeHtml(body)}</sup>`;
+  }
+  flush();
+  return out;
+}
+
+/**
+ * ביטוי מתמטי טהור. נכפה עליו כיוון LTR ומופעל עליו ניקוי טיפוגרפי.
+ * שומר על הצורה המקורית - (x+3)^2 יוצג כ-(x+3)² ולא ייפתח.
+ */
+export function renderExpr(text) {
+  return `<span class="expr" dir="ltr">${superscriptify(typography(String(text ?? '')))}</span>`;
+}
+
+/**
+ * טקסט מעורב עברית+מתמטיקה (שלבי פתרון, הערות, תשובות המורה הפרטי).
+ * ממיר חזקות לכתב עילי, אבל *לא* כופה כיוון LTR - אחרת משפט עברי שיש בו
+ * ביטוי היה מוצג הפוך. רק אם אין בטקסט אות עברית כלל, הוא נחשב ביטוי טהור.
  */
 export function renderInline(text) {
   const raw = String(text ?? '');
-  let html = escapeHtml(raw).replace(/\^\(?(-?\d+)\)?/g, (_, exp) => `<sup>${exp}</sup>`);
+  const html = superscriptify(raw);
   const hasHebrew = /[֐-׿]/.test(raw);
   return hasHebrew ? html : `<span class="expr" dir="ltr">${html}</span>`;
 }
