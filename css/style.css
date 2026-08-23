@@ -25,6 +25,10 @@
 
 * { box-sizing: border-box; }
 
+/* חייב להופיע לפני הכללים שמגדירים display: כלל כמו .app-header{display:flex}
+   גובר על ברירת המחדל של [hidden], והכותרת הייתה מופיעה גם במסך הכניסה. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   font-family: "Segoe UI", "Assistant", "Rubik", system-ui, sans-serif;
