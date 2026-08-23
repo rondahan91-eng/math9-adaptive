@@ -154,9 +154,36 @@ label { font-size: .9rem; color: var(--text-dim); display: block; margin-bottom:
 }
 .tutor .tutor-label {
   font-size: .75rem; font-weight: 700; letter-spacing: .04em;
-  color: var(--accent); text-transform: uppercase; margin-bottom: .3rem;
+  color: var(--accent); text-transform: uppercase; margin-bottom: .5rem;
 }
-.tutor.loading { color: var(--text-dim); font-style: italic; }
+.tutor-q {
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: .25rem;
+}
+.tutor-q::before { content: "› "; opacity: .6; }
+.tutor-a { margin-bottom: .9rem; }
+.tutor-a:last-of-type { margin-bottom: .6rem; }
+.tutor-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+.tutor-actions button { background: var(--surface); }
+.tutor-busy { color: var(--text-dim); font-style: italic; }
+.tutor-note { font-size: .88rem; color: var(--text-dim); }
+.tutor-note.err { color: var(--err); }
+.tutor-meta {
+  margin-top: .6rem; font-size: .78rem; color: var(--text-dim);
+  border-top: 1px solid #d2cff0; padding-top: .45rem;
+}
+
+/* שוויון שעבר אימות מול המנוע המתמטי - הסימון דיסקרטי בכוונה, הוא
+   מאשר ולא מכריז. שוויון שנכשל אינו מגיע לכאן כלל. */
+.claim { white-space: nowrap; }
+.claim.verified::after {
+  content: "✓";
+  font-size: .7em;
+  color: var(--ok);
+  margin-inline-start: .15em;
+  vertical-align: super;
+}
 
 /* -------------------------------------------------------------- מפת ידע */
 .stage-title {

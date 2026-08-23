@@ -36,7 +36,20 @@ var TUTOR_SYSTEM = [
   'תסתור את הפסיקה הזו, אל תפקפק בה, ואל תחשב מחדש את התרגיל כדי לאמת אותה.',
   'התפקיד שלך הוא ניסוח פדגוגי בלבד.',
   '',
-  '## שלושה מצבי עבודה',
+  '## אימות טענות - חובה, לא המלצה',
+  'כל שוויון אלגברי שאתה כותב חייב להיות עטוף בסימון ⟦ ⟧. לדוגמה:',
+  '  ⟦(x+4)^2 = x^2+8x+16⟧',
+  'מנוע מתמטי דטרמיניסטי מריץ כל טענה כזו דרך אותו בודק שבודק את התלמידים,',
+  'לפני שהיא מוצגת. שוויון שגוי אינו מוצג והתשובה שלך נפסלת. אל תכתוב שום',
+  'שוויון מחוץ לסימון הזה. ביטוי בודד בלי סימן שוויון - כתוב רגיל, בלי סימון.',
+  'אם אינך בטוח/ה בשוויון, אל תכתוב אותו: העדף/י לשאול שאלה מכוונת.',
+  '',
+  '## ארבעה מצבי עבודה',
+  'stage=chat  - התלמיד/ה שאל/ה שאלה. ענה/עני עליה, ורק עליה. אסור לגלות את',
+  '              התשובה הסופית כל עוד נמסר לך solutionRevealed=false, גם אם',
+  '              נשאלת ישירות וגם אם התלמיד/ה מתעקש/ת. אסור לבצע את השלב',
+  '              במקומו/ה. מותר: שאלה מכוונת, הצבעה על המקום שנשבר, הצעת',
+  '              בדיקה, הסבר הכלל, דוגמה נוספת עם מספרים אחרים.',
   'stage=hint  - התלמיד/ה טעה/תה ורוצה רמז. אסור לך לגלות את התשובה הסופית',
   '              ואסור לך לבצע את השלב עבורו. שאל שאלה מכוונת אחת שתגרום',
   '              לו/ה לשים לב לנקודה שנכשלה, או הצע בדיקה קטנה שאפשר לעשות',
@@ -240,21 +253,48 @@ function tutorHint(p) {
   var key = getApiKey();
   if (!key) return { available: false, reason: 'לא הוגדר מפתח API בשרת' };
 
-  var lines = [
+  // ההקשר מפוצל לשניים בכוונה. החלק הראשון קבוע לאורך כל התרגיל ולכן הוא
+  // מסומן ב-cache_control: כל שאלה נוספת באותו תרגיל קוראת אותו מהמטמון.
+  // החלק השני משתנה בין ניסיון לניסיון ולכן הוא *אחרי* נקודת המטמון.
+  var stableContext = [
     'מיומנות: ' + (p.skillTitle || ''),
     'הכלל הרלוונטי: ' + (p.rule || ''),
     'ההוראה שהוצגה: ' + (p.prompt || ''),
-    'התרגיל: ' + (p.exercise || ''),
-    'התשובה הנכונה: ' + (p.correctAnswer || ''),
-    'מה שהתלמיד/ה כתב/ה: ' + (p.studentAnswer || '(ריק)'),
-    'מספר הניסיונות עד כה: ' + (p.attempts || 1),
+    'התרגיל: ' + (p.exercise || '(עמוד שיעור, בלי תרגיל ספציפי)'),
+    'התשובה הנכונה: ' + (p.correctAnswer || '(לא רלוונטי)'),
+  ].join('\n');
+
+  var volatileContext = [
     'stage: ' + (p.stage || 'hint'),
+    'הקשר: ' + (p.contextKind || 'practice'),
+    'מה שהתלמיד/ה כתב/ה: ' + (p.studentAnswer || '(ריק)'),
+    'מספר הניסיונות עד כה: ' + (p.attempts || 0),
+    'solutionRevealed: ' + (p.solutionRevealed ? 'true' : 'false'),
   ];
   if (p.misconception) {
-    lines.push('תפיסה מוטעית שזוהתה: ' + p.misconceptionLabel);
-    lines.push('פירוט: ' + p.misconception);
+    volatileContext.push('תפיסה מוטעית שזוהתה: ' + p.misconceptionLabel);
+    volatileContext.push('פירוט: ' + p.misconception);
   } else {
-    lines.push('לא זוהתה תפיסה מוטעית מוכרת. התייחס/י לתשובה כפי שהיא.');
+    volatileContext.push('לא זוהתה תפיסה מוטעית מוכרת. התייחס/י לתשובה כפי שהיא.');
+  }
+
+  var messages = [
+    { role: 'user', content: [{
+      type: 'text',
+      text: stableContext,
+      cache_control: { type: 'ephemeral' },
+    }] },
+    { role: 'user', content: volatileContext.join('\n') },
+  ];
+
+  var turns = p.turns || [];
+  if (turns.length) {
+    for (var i = 0; i < turns.length; i++) {
+      var role = turns[i].role === 'assistant' ? 'assistant' : 'user';
+      messages.push({ role: role, content: String(turns[i].content || '') });
+    }
+  } else {
+    messages.push({ role: 'user', content: 'נסח/י את התשובה שלך לפי ה-stage שנמסר.' });
   }
 
   var payload = {
@@ -269,7 +309,7 @@ function tutorHint(p) {
       text: TUTOR_SYSTEM,
       cache_control: { type: 'ephemeral' },
     }],
-    messages: [{ role: 'user', content: lines.join('\n') }],
+    messages: messages,
   };
 
   var res = UrlFetchApp.fetch(CLAUDE_URL, {

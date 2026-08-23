@@ -16,6 +16,11 @@ import { GENERATORS, generateExercise } from '../js/curriculum/generators.js';
 import { MISCONCEPTIONS } from '../js/curriculum/misconceptions.js';
 import { SKILLS, topoOrder } from '../js/curriculum/skills.js';
 import { renderExpr, renderInline } from '../js/math/render.js';
+import { checkClaim, renderVerified, failureNote } from '../js/math/verify.js';
+import {
+  newThread, pushQuestion, dropLastQuestion, threadFull, preparedQuestions,
+  questionsLeft, recordQuestion, DAILY_LIMIT, TURNS_PER_EXERCISE,
+} from '../js/learn/conversation.js';
 import { LESSONS } from '../js/curriculum/lessons.js';
 import {
   emptyState, normalizeState, updateSkill, selectNextSkill, isUnlocked, isMastered,
@@ -176,6 +181,57 @@ ok('כל הנוסחאות בשיעורים נקיות מ-^ אחרי רינדור
   }
   return true;
 })());
+
+// -------------------------------------------------------------- המורה הפרטי
+group('אימות טענות המורה הפרטי');
+ok('שוויון נכון עובר', checkClaim('(x+4)^2 = x^2+8x+16').kind === 'verified');
+ok('שוויון שגוי נפסל', checkClaim('(x+4)^2 = x^2+16').kind === 'false');
+ok('פירוק נכון עובר', checkClaim('x^2-9 = (x-3)(x+3)').kind === 'verified');
+ok('פירוק שגוי נפסל', checkClaim('x^2-9 = (x-3)^2').kind === 'false');
+ok('ביטוי בלי שוויון אינו טענה', checkClaim('x^2+8x+16').kind === 'expression');
+ok('ביטוי לא תקין מסומן', checkClaim('x^2 = ((x').kind === 'invalid');
+ok('שני סימני שוויון נפסלים', checkClaim('a = b = c').kind === 'invalid');
+ok('שוויון עם אותיות גדולות עובר', checkClaim('(X+3)(X-3) = X^2-9').kind === 'verified');
+
+const good = renderVerified('נבדוק: ⟦(x+4)^2 = x^2+8x+16⟧ ולכן חסר לך האיבר האמצעי.');
+ok('תשובה תקינה לא מייצרת כשלים', good.failures.length === 0);
+ok('הטענה מסומנת כמאומתת', good.html.includes('claim verified'));
+ok('הטקסט העברי נשמר', good.html.includes('ולכן חסר לך האיבר האמצעי'));
+ok('הסימון ⟦⟧ לא מגיע למסך', !good.html.includes('⟦') && !good.html.includes('⟧'));
+
+const bad = renderVerified('זה פשוט: ⟦(x+4)^2 = x^2+16⟧');
+ok('טענה שגויה מדווחת ככשל', bad.failures.length === 1);
+ok('טענה שגויה אינה מרונדרת', !bad.html.includes('x<sup>2</sup>+16'));
+ok('הודעת התיקון מכילה את הטענה', failureNote(bad.failures).includes('(x+4)^2 = x^2+16'));
+
+group('מכסת שאלות ושאלות מוכנות');
+const qs = emptyState();
+ok('מתחילים עם המכסה המלאה', questionsLeft(qs) === DAILY_LIMIT);
+recordQuestion(qs); recordQuestion(qs);
+ok('כל שאלה מורידה אחת', questionsLeft(qs) === DAILY_LIMIT - 2);
+qs.tutorUsage = { date: '2020-01-01', count: DAILY_LIMIT };
+ok('מכסה מיום קודם אינה נספרת', questionsLeft(qs) === DAILY_LIMIT);
+ok('...והיא אינה נצברת מעבר למקסימום', questionsLeft(qs) <= DAILY_LIMIT);
+
+ok('אין שאלות לפני ניסיון ראשון',
+  preparedQuestions({ context: 'practice', attempts: 0 }).length === 0);
+ok('אחרי טעות בלי אבחון - שאלות פתיחה',
+  preparedQuestions({ context: 'practice', attempts: 1 }).length === 3);
+const withMis = preparedQuestions({ context: 'practice', attempts: 1, misconceptionId: 'sq-no-middle' });
+ok('אבחון מייצר שאלות על הטעות עצמה', withMis.some(q => q.id === 'why-wrong'));
+ok('...והשאלה מזכירה את שם התפיסה',
+  withMis.find(q => q.id === 'why-wrong').text.includes('שכחת את האיבר האמצעי'));
+ok('אחרי חשיפת פתרון - שאלות סיכום',
+  preparedQuestions({ context: 'practice', attempts: 2, settled: true }).some(q => q.id === 'recap'));
+ok('בשיעור - שאלות על ההסבר',
+  preparedQuestions({ context: 'lesson' }).some(q => q.id === 'example'));
+
+const th = newThread();
+for (let i = 0; i < TURNS_PER_EXERCISE; i++) pushQuestion(th, `q${i}`, `q${i}`);
+ok('מגבלת סבבים בתרגיל נאכפת', threadFull(th));
+dropLastQuestion(th);
+ok('הסרת סבב שנכשל מפנה מקום', !threadFull(th));
+ok('view ו-turns נשארים מסונכרנים', th.view.length === th.turns.length);
 
 group('גנרטורים - סריקה מלאה');
 const SEEDS = 120;

@@ -32,7 +32,7 @@ const emptySkill = () => ({ p: BKT.pInit, attempts: 0, correct: 0, streak: 0, ma
 export function emptyState() {
   const skills = {};
   for (const s of SKILLS) skills[s.id] = emptySkill();
-  return { skills, misconceptions: {}, history: [] };
+  return { skills, misconceptions: {}, history: [], tutorUsage: null };
 }
 
 /**
@@ -51,6 +51,7 @@ export function normalizeState(state) {
     skills,
     misconceptions: state.misconceptions || {},
     history: state.history || [],
+    tutorUsage: state.tutorUsage || null,
   };
 }
 

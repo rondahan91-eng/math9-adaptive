@@ -19,7 +19,11 @@ import {
 } from '../learn/mastery.js';
 import { CONFIG } from '../config.js';
 import { escapeHtml, symbolBar, wireSymbolBar, progressBar } from '../ui.js';
-import { requestTutor } from '../tutor.js';
+import { askTutor } from '../tutor.js';
+import {
+  newThread, pushQuestion, pushAnswer, dropLastQuestion, threadFull,
+  preparedQuestions, questionsLeft, recordQuestion, TURNS_PER_EXERCISE,
+} from '../learn/conversation.js';
 
 export function renderPractice(root, ctx, params = {}) {
   const round = { done: 0, correct: 0, forcedSkill: params.skillId || null };
@@ -30,6 +34,9 @@ export function renderPractice(root, ctx, params = {}) {
   let lastResult = null;
   let lastMisconception = null;
   let typed = ''; // מה שהתלמיד/ה הקליד/ה - נשמר בין רינדורים כדי שלא ייעלם
+  let thread = newThread();
+  let tutorBusy = false;
+  let tutorError = '';
 
   root.innerHTML = `
     <div class="spread" style="margin-bottom:.8rem">
@@ -58,10 +65,13 @@ export function renderPractice(root, ctx, params = {}) {
     lastResult = null;
     lastMisconception = null;
     typed = '';
+    thread = newThread(); // הקשר של תרגיל קודם מבלבל יותר משהוא עוזר
+    tutorBusy = false;
+    tutorError = '';
     paint();
   }
 
-  function paint(feedbackHtml = '', tutorHtml = '') {
+  function paint(feedbackHtml = '') {
     const skill = SKILL_BY_ID[ex.skillId];
     roundInfo.textContent = `תרגיל ${round.done + 1} · ${round.correct} נכונות בסבב`;
 
@@ -90,13 +100,11 @@ export function renderPractice(root, ctx, params = {}) {
               ? `<button type="button" class="primary" data-next>תרגיל הבא</button>`
               : `<button type="submit" class="primary">בדיקה</button>
                  <button type="button" data-reveal>הראו לי את הפתרון</button>`}
-            ${!settled && attempts > 0 && ctx.tutor.available
-              ? '<button type="button" class="ghost" data-hint>רמז</button>' : ''}
           </div>
         </form>
 
         <div id="feedback">${feedbackHtml}</div>
-        <div id="tutor">${tutorHtml}</div>
+        <div id="tutor">${tutorPanel()}</div>
       </div>`;
 
     const input = card.querySelector('#answer');
@@ -112,9 +120,89 @@ export function renderPractice(root, ctx, params = {}) {
     });
     card.querySelector('[data-next]')?.addEventListener('click', advance);
     card.querySelector('[data-reveal]')?.addEventListener('click', reveal);
-    card.querySelector('[data-hint]')?.addEventListener('click', askTutor);
     card.querySelector('[data-lesson]').addEventListener('click',
       () => ctx.navigate('lesson', { skillId: ex.skillId }));
+    card.querySelectorAll('[data-ask]').forEach(btn => {
+      btn.addEventListener('click', () => ask(btn.dataset.ask));
+    });
+  }
+
+  // -------------------------------------------------------------- מורה פרטי
+  /**
+   * שלב א': כפתורים בלבד, בלי שדה שאלה חופשי. רוב תלמידי ט׳ לא יודעים לנסח
+   * שאלה מתמטית, והכפתורים הם ממילא הדרך העיקרית.
+   */
+  function currentQuestions() {
+    return preparedQuestions({
+      context: 'practice',
+      misconceptionId: lastMisconception,
+      attempts,
+      settled,
+    });
+  }
+
+  function tutorPanel() {
+    if (!ctx.tutor.available) return '';
+    if (attempts === 0 && !settled) return '';  // חייבים לנסות לפני ששואלים
+
+    const left = questionsLeft(ctx.state);
+    const messages = thread.view.map(m => m.role === 'user'
+      ? `<div class="tutor-q">${escapeHtml(m.label)}</div>`
+      : `<div class="tutor-a">${m.html}</div>`).join('');
+
+    let actions = '';
+    if (tutorBusy) {
+      actions = '<div class="tutor-busy">המורה הפרטי חושב…</div>';
+    } else if (left <= 0) {
+      actions = '<div class="tutor-note">נגמרו השאלות להיום. המכסה מתחדשת מחר.</div>';
+    } else if (threadFull(thread)) {
+      actions = `<div class="tutor-note">הגעתם למקסימום השאלות בתרגיל הזה. אפשר להמשיך לתרגיל הבא או לקרוא את ההסבר.</div>`;
+    } else {
+      actions = `<div class="tutor-actions">${currentQuestions()
+        .map(q => `<button type="button" class="small" data-ask="${escapeHtml(q.id)}">${escapeHtml(q.label)}</button>`)
+        .join('')}</div>`;
+    }
+
+    return `<div class="tutor">
+      <div class="tutor-label">מורה פרטי</div>
+      ${messages}
+      ${tutorError ? `<div class="tutor-note err">${escapeHtml(tutorError)}</div>` : ''}
+      ${actions}
+      ${left > 0 && !tutorBusy ? `<div class="tutor-meta">נותרו ${left} שאלות היום · ${TURNS_PER_EXERCISE - thread.asked} בתרגיל הזה</div>` : ''}
+    </div>`;
+  }
+
+  async function ask(questionId) {
+    if (tutorBusy || questionsLeft(ctx.state) <= 0 || threadFull(thread)) return;
+    const question = currentQuestions().find(q => q.id === questionId);
+    if (!question) return;
+
+    tutorError = '';
+    tutorBusy = true;
+    pushQuestion(thread, question.text, question.label);
+    recordQuestion(ctx.state);
+    ctx.save();
+    paint(card.querySelector('#feedback')?.innerHTML || '');
+
+    const res = await askTutor({
+      exercise: ex,
+      thread,
+      studentAnswer: typed,
+      misconceptionId: lastMisconception,
+      attempts,
+      settled,
+      studentName: ctx.user.displayName,
+      contextKind: 'practice',
+    });
+
+    tutorBusy = false;
+    if (res.available) {
+      pushAnswer(thread, res.text, res.html);
+    } else {
+      dropLastQuestion(thread);
+      tutorError = res.reason || 'המורה הפרטי אינו זמין כרגע.';
+    }
+    paint(card.querySelector('#feedback')?.innerHTML || '');
   }
 
   // -------------------------------------------------------------- בדיקה
@@ -190,7 +278,6 @@ export function renderPractice(root, ctx, params = {}) {
       ${renderExpr(ex.exprText)} = ${renderExpr(ex.answerText)}
       <br><span class="muted">${renderInline(ex.rule || '')}</span>
     </div>`);
-    if (ctx.tutor.available) askTutor('explain');
   }
 
   function advance() {
@@ -216,33 +303,4 @@ export function renderPractice(root, ctx, params = {}) {
     card.querySelector('[data-home]').addEventListener('click', () => ctx.navigate('home'));
   }
 
-  // -------------------------------------------------------------- המורה הפרטי
-  async function askTutor(stage = 'hint') {
-    const tutorBox = card.querySelector('#tutor');
-    tutorBox.innerHTML = `<div class="tutor loading">המורה הפרטי חושב…</div>`;
-    const res = await requestTutor({
-      exercise: ex,
-      studentAnswer: typed,
-      misconceptionId: lastMisconception,
-      stage: typeof stage === 'string' ? stage : 'hint',
-      attempts,
-      studentName: ctx.user.displayName,
-    });
-    if (!res.available) {
-      tutorBox.innerHTML = hintUnavailableHtml(res.reason);
-      return;
-    }
-    // גם אם המודל כתב x^2 למרות ההנחיה, renderInline יהפוך את זה לכתב עילי
-    const body = res.text.split(/\n+/).map(line => renderInline(line)).join('<br>');
-    tutorBox.innerHTML = `<div class="tutor">
-      <div class="tutor-label">מורה פרטי</div>
-      ${body}
-    </div>`;
-  }
-
-  function hintUnavailableHtml(reason) {
-    return `<p class="muted" style="margin-top:.6rem">
-      המורה הפרטי אינו זמין כרגע${reason ? ` — ${escapeHtml(reason)}` : ''}.
-    </p>`;
-  }
 }

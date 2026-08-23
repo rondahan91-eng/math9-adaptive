@@ -7,6 +7,11 @@ import { lessonFor } from '../curriculum/lessons.js';
 import { isUnlocked, isMastered, MASTERY_THRESHOLD } from '../learn/mastery.js';
 import { renderInline } from '../math/render.js';
 import { escapeHtml, progressBar } from '../ui.js';
+import { askAboutLesson } from '../tutor.js';
+import {
+  newThread, pushQuestion, pushAnswer, dropLastQuestion, threadFull,
+  preparedQuestions, questionsLeft, recordQuestion,
+} from '../learn/conversation.js';
 
 export function renderLesson(root, ctx, params) {
   const skill = SKILL_BY_ID[params.skillId];
@@ -31,6 +36,8 @@ export function renderLesson(root, ctx, params) {
 
     ${lesson ? `<div class="card stack">${lesson.body.map(renderBlock).join('')}</div>` : ''}
 
+    <div id="lesson-tutor"></div>
+
     <div class="card">
       ${unlocked
         ? `<button class="primary" data-practice>לתרגל את ${escapeHtml(skill.title)}</button>`
@@ -42,6 +49,76 @@ export function renderLesson(root, ctx, params) {
   root.querySelector('[data-back]').addEventListener('click', () => ctx.navigate('home'));
   root.querySelector('[data-practice]')
     ?.addEventListener('click', () => ctx.navigate('practice', { skillId: skill.id }));
+
+  wireLessonTutor(root.querySelector('#lesson-tutor'), ctx, skill);
+}
+
+// -------------------------------------------------------------- מורה פרטי בשיעור
+/**
+ * בשיעור אין ניסיון שקדם לשאלה, ולכן אין כאן את הכלל "חייבים לנסות קודם" —
+ * הוא שייך לתרגול. השאלות כאן הן על ההסבר עצמו.
+ */
+function wireLessonTutor(host, ctx, skill) {
+  if (!host || !ctx.tutor.available) return;
+  const thread = newThread();
+  let busy = false;
+  let error = '';
+
+  const questions = () => preparedQuestions({ context: 'lesson' });
+
+  function paint() {
+    const left = questionsLeft(ctx.state);
+    const messages = thread.view.map(m => m.role === 'user'
+      ? `<div class="tutor-q">${escapeHtml(m.label)}</div>`
+      : `<div class="tutor-a">${m.html}</div>`).join('');
+
+    let actions;
+    if (busy) actions = '<div class="tutor-busy">המורה הפרטי חושב…</div>';
+    else if (left <= 0) actions = '<div class="tutor-note">נגמרו השאלות להיום. המכסה מתחדשת מחר.</div>';
+    else if (threadFull(thread)) actions = '<div class="tutor-note">הגעתם למקסימום השאלות בעמוד הזה.</div>';
+    else actions = `<div class="tutor-actions">${questions()
+      .map(q => `<button type="button" class="small" data-ask="${escapeHtml(q.id)}">${escapeHtml(q.label)}</button>`)
+      .join('')}</div>`;
+
+    host.innerHTML = `<div class="tutor">
+      <div class="tutor-label">שאלה על השיעור</div>
+      ${messages}
+      ${error ? `<div class="tutor-note err">${escapeHtml(error)}</div>` : ''}
+      ${actions}
+      ${left > 0 && !busy ? `<div class="tutor-meta">נותרו ${left} שאלות היום</div>` : ''}
+    </div>`;
+
+    host.querySelectorAll('[data-ask]').forEach(btn => {
+      btn.addEventListener('click', () => ask(btn.dataset.ask));
+    });
+  }
+
+  async function ask(id) {
+    if (busy || questionsLeft(ctx.state) <= 0 || threadFull(thread)) return;
+    const question = questions().find(q => q.id === id);
+    if (!question) return;
+
+    error = '';
+    busy = true;
+    pushQuestion(thread, question.text, question.label);
+    recordQuestion(ctx.state);
+    ctx.save();
+    paint();
+
+    const res = await askAboutLesson({
+      skillId: skill.id,
+      rule: skill.short,
+      thread,
+      studentName: ctx.user.displayName,
+    });
+
+    busy = false;
+    if (res.available) pushAnswer(thread, res.text, res.html);
+    else { dropLastQuestion(thread); error = res.reason || 'המורה הפרטי אינו זמין כרגע.'; }
+    paint();
+  }
+
+  paint();
 }
 
 function renderBlock(block) {
