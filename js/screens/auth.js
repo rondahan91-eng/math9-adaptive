@@ -10,8 +10,8 @@ export function renderAuth(root, ctx, onLogin) {
   root.innerHTML = `
     <div class="center-page">
       <div class="card">
-        <h1>מתמטיקה ט׳</h1>
-        <p class="muted">כפל מקוצר ופירוק לגורמים — לומדה אדפטיבית</p>
+        <h1 style="margin-bottom:.15rem">מתמטיקה לכיתה ט׳</h1>
+        <p class="muted" style="margin-bottom:0">לומדה אדפטיבית לתרגול עצמי</p>
         <form id="login-form" class="stack" style="margin-top:1rem">
           <div>
             <label for="u">שם משתמש</label>

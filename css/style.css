@@ -200,9 +200,21 @@ label { font-size: .9rem; color: var(--text-dim); display: block; margin-bottom:
 .formula .expr { font-size: 1.25rem; }
 .formula .note { font-size: .82rem; color: var(--text-dim); margin-top: .3rem; }
 .example { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: .8rem .9rem; }
-.example ol { margin: .5rem 0; padding-inline-start: 1.2rem; }
-.example li { margin-bottom: .2rem; }
-.example .result { font-weight: 650; margin-top: .4rem; }
+.example .steps { margin: .6rem 0 .2rem; display: flex; flex-direction: column; gap: .6rem; }
+.example .step-label {
+  display: block;
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: .01em;
+}
+.example .step-body { display: block; padding-inline-start: .2rem; }
+.example .result {
+  font-weight: 650;
+  margin-top: .7rem;
+  padding-top: .6rem;
+  border-top: 1px solid var(--border);
+}
 .note-warn {
   background: var(--warn-soft); border: 1px solid #ecd9ab;
   border-radius: 8px; padding: .7rem .9rem;

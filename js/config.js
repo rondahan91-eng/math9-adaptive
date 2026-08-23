@@ -7,7 +7,8 @@
 
 export const CONFIG = {
   API_URL: '', // לדוגמה: 'https://script.google.com/macros/s/AKfycb.../exec'
-  APP_NAME: 'מתמטיקה ט׳',
+  APP_NAME: 'מתמטיקה לכיתה ט׳',
+  APP_TAGLINE: 'לומדה אדפטיבית לתרגול עצמי',
   UNIT_TITLE: 'כפל מקוצר ופירוק לגורמים',
   SESSION_KEY: 'math9-session',
   STATE_KEY: 'math9-state',

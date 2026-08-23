@@ -54,9 +54,17 @@ function renderBlock(block) {
         ${block.note ? `<div class="note">${escapeHtml(block.note)}</div>` : ''}
       </div>`;
     case 'example':
+      // "שלב 1:" בשורה נפרדת ולא מספור אוטומטי של <ol>: בשלבים עצמם מופיעים
+      // זוגות מספרים כמו (1,12) (2,6), ומספר עם נקודה לידם מבלבל.
       return `<div class="example lesson-block">
         <div>${renderInline(block.question)}</div>
-        <ol>${block.steps.map(s => `<li>${renderInline(s)}</li>`).join('')}</ol>
+        <div class="steps">
+          ${block.steps.map((s, i) => `
+            <div class="step">
+              <span class="step-label">שלב ${i + 1}:</span>
+              <span class="step-body">${renderInline(s)}</span>
+            </div>`).join('')}
+        </div>
         <div class="result">= ${renderInline(block.answer)}</div>
       </div>`;
     case 'warning':
