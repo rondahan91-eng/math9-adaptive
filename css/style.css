@@ -1,0 +1,233 @@
+/* ==========================================================================
+   לומדת מתמטיקה ט' - עיצוב
+   ממשק RTL, נקי ורגוע. הביטויים המתמטיים תמיד LTR בתוך זרימה עברית.
+   ========================================================================== */
+
+:root {
+  --bg: #f6f6f4;
+  --surface: #ffffff;
+  --surface-2: #fbfbfa;
+  --border: #e3e1dc;
+  --border-strong: #cfccc5;
+  --text: #1e1c1a;
+  --text-dim: #6b665f;
+  --accent: #3f3d9e;
+  --accent-soft: #ecebf8;
+  --ok: #14713f;
+  --ok-soft: #e4f3ea;
+  --warn: #8a5a00;
+  --warn-soft: #fbf0da;
+  --err: #a32036;
+  --err-soft: #fbe9ec;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(30, 28, 26, .05), 0 8px 24px rgba(30, 28, 26, .05);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Assistant", "Rubik", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  direction: rtl;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { line-height: 1.3; margin: 0 0 .5em; font-weight: 650; }
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.2rem; }
+h3 { font-size: 1rem; }
+p { margin: 0 0 .8em; }
+
+/* -------------------------------------------------------------- פריסה */
+.app-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: .7rem 1.2rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.app-header .brand { font-weight: 700; letter-spacing: -.01em; }
+.app-header .brand small { display: block; font-weight: 400; font-size: .75rem; color: var(--text-dim); }
+.app-header nav { margin-inline-start: auto; display: flex; gap: .3rem; flex-wrap: wrap; }
+
+main { max-width: 860px; margin: 0 auto; padding: 1.5rem 1.2rem 4rem; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.2rem;
+  box-shadow: var(--shadow);
+  margin-bottom: 1rem;
+}
+
+.stack { display: flex; flex-direction: column; gap: .75rem; }
+.row { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+.spread { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.muted { color: var(--text-dim); font-size: .9rem; }
+
+/* -------------------------------------------------------------- כפתורים */
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 9px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  padding: .5rem .95rem;
+  transition: background .12s, border-color .12s, transform .06s;
+}
+button:hover:not(:disabled) { background: var(--surface-2); border-color: var(--text-dim); }
+button:active:not(:disabled) { transform: translateY(1px); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover:not(:disabled) { background: #34327f; border-color: #34327f; }
+button.ghost { border-color: transparent; background: transparent; color: var(--accent); }
+button.ghost:hover:not(:disabled) { background: var(--accent-soft); }
+button.small { padding: .3rem .6rem; font-size: .85rem; }
+
+input[type=text], input[type=password], select {
+  font: inherit;
+  padding: .55rem .7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  width: 100%;
+}
+input:focus, select:focus, button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+label { font-size: .9rem; color: var(--text-dim); display: block; margin-bottom: .2rem; }
+
+/* -------------------------------------------------------------- ביטויים */
+.expr {
+  font-family: "Cambria Math", "Latin Modern Math", Georgia, "Times New Roman", serif;
+  font-size: 1.05em;
+  white-space: nowrap;
+  unicode-bidi: isolate;
+}
+.expr sup { font-size: .72em; }
+.exercise-expr { font-size: 1.9rem; display: block; margin: .6rem 0 1rem; letter-spacing: .01em; }
+.answer-input {
+  font-family: "Cambria Math", Georgia, serif;
+  font-size: 1.25rem;
+  direction: ltr;
+  text-align: left;
+}
+
+/* -------------------------------------------------------------- מקלדת סמלים */
+.symbol-bar { display: flex; gap: .35rem; flex-wrap: wrap; margin-top: .5rem; }
+.symbol-bar button {
+  font-family: "Cambria Math", Georgia, serif;
+  min-width: 2.3rem;
+  padding: .3rem .5rem;
+  font-size: 1rem;
+}
+
+/* -------------------------------------------------------------- משוב */
+.feedback { border-radius: var(--radius); padding: .9rem 1rem; margin-top: 1rem; border: 1px solid; }
+.feedback.ok { background: var(--ok-soft); border-color: #b8dcc6; color: var(--ok); }
+.feedback.err { background: var(--err-soft); border-color: #f0c4cc; color: var(--err); }
+.feedback.warn { background: var(--warn-soft); border-color: #ecd9ab; color: var(--warn); }
+.feedback strong { display: block; margin-bottom: .25rem; }
+.feedback .expr { color: var(--text); }
+
+.tutor {
+  margin-top: .8rem;
+  background: var(--accent-soft);
+  border: 1px solid #d2cff0;
+  border-radius: var(--radius);
+  padding: .85rem 1rem;
+}
+.tutor .tutor-label {
+  font-size: .75rem; font-weight: 700; letter-spacing: .04em;
+  color: var(--accent); text-transform: uppercase; margin-bottom: .3rem;
+}
+.tutor.loading { color: var(--text-dim); font-style: italic; }
+
+/* -------------------------------------------------------------- מפת ידע */
+.stage-title {
+  font-size: .78rem; font-weight: 700; letter-spacing: .06em;
+  color: var(--text-dim); text-transform: none;
+  margin: 1.4rem 0 .5rem;
+}
+.skill-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: .7rem; }
+.skill-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: .8rem .9rem;
+  text-align: start;
+  width: 100%;
+  display: block;
+}
+.skill-card.locked { opacity: .55; background: var(--surface-2); }
+.skill-card.mastered { border-color: #b8dcc6; background: var(--ok-soft); }
+.skill-card .title { font-weight: 650; margin-bottom: .1rem; }
+.skill-card .sub { font-size: .82rem; color: var(--text-dim); }
+.skill-card .lock-note { font-size: .78rem; color: var(--warn); margin-top: .35rem; }
+
+.bar { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; margin-top: .5rem; }
+.bar > span { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .35s; }
+.bar.ok > span { background: var(--ok); }
+
+.badge {
+  display: inline-block; font-size: .74rem; padding: .1rem .5rem;
+  border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-weight: 600;
+}
+.badge.warn { background: var(--warn-soft); color: var(--warn); }
+.badge.ok { background: var(--ok-soft); color: var(--ok); }
+
+/* -------------------------------------------------------------- שיעור */
+.lesson-block { margin-bottom: 1rem; }
+.formula {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-inline-start: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: .7rem .9rem;
+  text-align: center;
+}
+.formula .expr { font-size: 1.25rem; }
+.formula .note { font-size: .82rem; color: var(--text-dim); margin-top: .3rem; }
+.example { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: .8rem .9rem; }
+.example ol { margin: .5rem 0; padding-inline-start: 1.2rem; }
+.example li { margin-bottom: .2rem; }
+.example .result { font-weight: 650; margin-top: .4rem; }
+.note-warn {
+  background: var(--warn-soft); border: 1px solid #ecd9ab;
+  border-radius: 8px; padding: .7rem .9rem;
+}
+.note-warn strong { display: block; color: var(--warn); }
+
+/* -------------------------------------------------------------- טבלה */
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+th, td { text-align: start; padding: .5rem .6rem; border-bottom: 1px solid var(--border); }
+th { font-size: .8rem; color: var(--text-dim); font-weight: 600; }
+tbody tr:hover { background: var(--surface-2); }
+
+/* -------------------------------------------------------------- הודעות */
+.toast {
+  position: fixed; inset-block-end: 1.2rem; inset-inline-start: 50%;
+  transform: translateX(50%);
+  background: var(--text); color: #fff;
+  padding: .6rem 1.1rem; border-radius: 99px; font-size: .9rem;
+  box-shadow: var(--shadow); z-index: 100;
+}
+.toast.err { background: var(--err); }
+
+.center-page { max-width: 400px; margin: 3.5rem auto; }
+
+@media (max-width: 560px) {
+  .exercise-expr { font-size: 1.5rem; white-space: normal; }
+  main { padding: 1rem .8rem 3rem; }
+}

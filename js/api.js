@@ -1,0 +1,116 @@
+// ==========================================================================
+// api.js - שכבת התקשורת מול השרת, עם מצב פיתוח מקומי
+// ==========================================================================
+// כל הקריאות הן POST יחיד עם {action, payload} - כדי להימנע מ-CORS preflight
+// מול Google Apps Script.
+
+import { CONFIG, isDevMode } from './config.js';
+
+async function call(action, payload = {}) {
+  if (isDevMode()) return devCall(action, payload);
+  const res = await fetch(CONFIG.API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action, payload }),
+  });
+  if (!res.ok) throw new Error(`שגיאת רשת (${res.status})`);
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'שגיאה לא ידועה מהשרת');
+  return data.result;
+}
+
+// -------------------------------------------------------------- מצב פיתוח
+const LS = {
+  read(key, fallback) {
+    try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
+    catch { return fallback; }
+  },
+  write(key, value) { localStorage.setItem(key, JSON.stringify(value)); },
+};
+
+const DEV_USERS_KEY = 'math9-dev-users';
+const DEV_PROGRESS_KEY = 'math9-dev-progress';
+
+function devUsers() {
+  return LS.read(DEV_USERS_KEY, [
+    { studentId: 'admin', username: 'admin', password: 'admin123', role: 'admin', displayName: 'מורה', grade: '' },
+    { studentId: 'demo1', username: 'demo', password: 'demo1234', role: 'student', displayName: 'תלמיד/ה לדוגמה', grade: 'ט1' },
+  ]);
+}
+
+async function devCall(action, payload) {
+  await new Promise(r => setTimeout(r, 60)); // מדמה השהיית רשת קטנה
+  switch (action) {
+    case 'tutorStatus':
+      return { available: false, reason: 'מצב פיתוח מקומי - לא מוגדר מפתח API' };
+
+    case 'tutorHint':
+      return { available: false, text: '' };
+
+    case 'authenticateUser': {
+      const users = devUsers();
+      const u = users.find(x =>
+        x.username.toLowerCase() === String(payload.username).trim().toLowerCase());
+      if (!u || u.password !== payload.password) throw new Error('שם משתמש או סיסמה שגויים');
+      const { password, ...safe } = u;
+      return safe;
+    }
+
+    case 'createNewStudent': {
+      const users = devUsers();
+      if (users.some(x => x.username.toLowerCase() === String(payload.username).trim().toLowerCase())) {
+        throw new Error('שם המשתמש כבר קיים');
+      }
+      const student = {
+        studentId: 's_' + Math.random().toString(36).slice(2, 10),
+        username: String(payload.username).trim(),
+        password: payload.password,
+        role: 'student',
+        displayName: payload.displayName || payload.username,
+        grade: payload.grade || '',
+      };
+      users.push(student);
+      LS.write(DEV_USERS_KEY, users);
+      const { password, ...safe } = student;
+      return safe;
+    }
+
+    case 'saveProgress': {
+      const all = LS.read(DEV_PROGRESS_KEY, {});
+      all[payload.studentId] = { state: payload.state, updatedAt: Date.now() };
+      LS.write(DEV_PROGRESS_KEY, all);
+      return { ok: true };
+    }
+
+    case 'fetchMyProgress': {
+      const all = LS.read(DEV_PROGRESS_KEY, {});
+      return all[payload.studentId]?.state || null;
+    }
+
+    case 'fetchClassProgress': {
+      const all = LS.read(DEV_PROGRESS_KEY, {});
+      return devUsers().filter(u => u.role === 'student').map(u => ({
+        studentId: u.studentId,
+        displayName: u.displayName,
+        grade: u.grade,
+        state: all[u.studentId]?.state || null,
+        updatedAt: all[u.studentId]?.updatedAt || null,
+      }));
+    }
+
+    default:
+      throw new Error(`פעולה לא מוכרת: ${action}`);
+  }
+}
+
+// -------------------------------------------------------------- ה-API הציבורי
+export const api = {
+  authenticateUser: (username, password) => call('authenticateUser', { username, password }),
+  createNewStudent: (username, password, displayName, grade) =>
+    call('createNewStudent', { username, password, displayName, grade }),
+  saveProgress: (studentId, state) => call('saveProgress', { studentId, state }),
+  fetchMyProgress: (studentId) => call('fetchMyProgress', { studentId }),
+  fetchClassProgress: () => call('fetchClassProgress', {}),
+  tutorStatus: () => call('tutorStatus', {}),
+  tutorHint: (context) => call('tutorHint', context),
+};

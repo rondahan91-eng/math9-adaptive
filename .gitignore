@@ -1,0 +1,21 @@
+# מערכת הפעלה
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# עורכים
+.vscode/
+.idea/
+*.swp
+
+# ארעי
+*.log
+*.tmp
+__pycache__/
+
+# חשוב: מפתח ה-API של Claude *לא* נמצא בקוד. הוא מוגדר כ-Script Property
+# בצד השרת (Google Apps Script). אם בכל זאת נוצר כאן קובץ סודות מקומי,
+# הוא לא ייכנס ל-git.
+secrets.json
+.env
+.env.*
