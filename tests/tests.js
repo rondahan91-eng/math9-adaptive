@@ -17,7 +17,10 @@ import { MISCONCEPTIONS } from '../js/curriculum/misconceptions.js';
 import { SKILLS, topoOrder } from '../js/curriculum/skills.js';
 import { renderExpr, renderInline } from '../js/math/render.js';
 import { LESSONS } from '../js/curriculum/lessons.js';
-import { emptyState, updateSkill, selectNextSkill, isUnlocked, MASTERY_THRESHOLD } from '../js/learn/mastery.js';
+import {
+  emptyState, normalizeState, updateSkill, selectNextSkill, isUnlocked, isMastered,
+  levelFor, overallProgress, MASTERY_THRESHOLD, MASTERY_MIN_ATTEMPTS, MASTERY_TOP_LEVEL,
+} from '../js/learn/mastery.js';
 import { diagnose } from '../js/learn/diagnose.js';
 
 const results = [];
@@ -264,18 +267,70 @@ ok('בהתחלה רק מיומנויות בלי קדם-דרישות פתוחות
   isUnlocked(st, 'monomial-mult') && !isUnlocked(st, 'factor-trinomial'));
 ok('הצעד הראשון הוא היסוד', selectNextSkill(st).skillId === 'monomial-mult');
 
-let sk = st.skills['monomial-mult'];
-for (let i = 0; i < 6; i++) sk = updateSkill(sk, true);
-ok('שש תשובות נכונות מביאות לשליטה', sk.p >= MASTERY_THRESHOLD, `p=${sk.p.toFixed(3)}`);
-let sk2 = sk;
-sk2 = updateSkill(sk2, false);
-ok('טעות אחת אחרי שליטה לא מאפסת', sk2.p > 0.5, `p=${sk2.p.toFixed(3)}`);
-let sk3 = st.skills['sq-sum'];
-sk3 = updateSkill(sk3, true);
-ok('תשובה נכונה אחת לא מספיקה לשליטה', sk3.p < MASTERY_THRESHOLD, `p=${sk3.p.toFixed(3)}`);
+/** מדמה רצף תשובות במיומנות אחת, עם הרמה שהמנוע היה מגיש בכל צעד. */
+function drill(state, skillId, results) {
+  for (const correct of results) {
+    const level = levelFor(state, skillId);
+    state.skills[skillId] = updateSkill(state.skills[skillId], correct, level);
+  }
+  return state.skills[skillId];
+}
 
-st.skills['monomial-mult'] = sk;
+let sk = drill(st, 'monomial-mult', [true, true]);
+ok('שתי תשובות נכונות מספיקות ל-p גבוה', sk.p >= MASTERY_THRESHOLD, `p=${sk.p.toFixed(3)}`);
+ok('אבל שתיים אינן "נשלט" — חסרים ניסיונות', !isMastered(st, 'monomial-mult'),
+  `attempts=${sk.attempts}, topLevel=${sk.maxCorrectLevel}`);
+
+sk = drill(st, 'monomial-mult', [true, true]);
+ok('ארבע נכונות כולל רמה 3 — נשלט', isMastered(st, 'monomial-mult'),
+  `p=${sk.p.toFixed(3)}, attempts=${sk.attempts}, topLevel=${sk.maxCorrectLevel}`);
+ok('הראיה נרשמה ברמה הגבוהה', sk.maxCorrectLevel >= MASTERY_TOP_LEVEL);
+
+// הבאג שתוקן: אי אפשר להיקבע כשולט בלי לפתור תרגיל ברמה הגבוהה
+const stx = emptyState();
+stx.skills['sq-sum'] = { p: 0.99, attempts: 20, correct: 20, streak: 20, maxCorrectLevel: 2 };
+ok('p גבוה בלי ראיה ברמה 3 אינו שליטה', !isMastered(stx, 'sq-sum'));
+ok('...והמנוע מגיש דווקא רמה 3 כדי לסגור את הפער', levelFor(stx, 'sq-sum') === 3);
+stx.skills['sq-sum'].maxCorrectLevel = 3;
+ok('אחרי תשובה נכונה ברמה 3 — נשלט', isMastered(stx, 'sq-sum'));
+
+// הסולם: כל הרמות מוגשות בפועל, אחת אחרי השנייה, בלי דילוג
+const reachable = [];
+let probe = emptyState();
+for (let i = 0; i < 6; i++) {
+  const lvl = levelFor(probe, 'monomial-mult');
+  reachable.push(lvl);
+  probe.skills['monomial-mult'] = updateSkill(probe.skills['monomial-mult'], true, lvl);
+}
+ok('הסולם עולה 1 → 2 → 3 בלי לדלג',
+  reachable.slice(0, 3).join(',') === '1,2,3', `רמות: ${reachable.join(',')}`);
+ok('אין קפיצה של יותר מרמה אחת בכל צעד',
+  reachable.every((l, i) => i === 0 || l - reachable[i - 1] <= 1), `רמות: ${reachable.join(',')}`);
+
+// כישלון ברמה מסוימת לא מקדם הלאה
+const stuck = emptyState();
+stuck.skills['sq-sum'] = updateSkill(stuck.skills['sq-sum'], true, 1);
+for (let i = 0; i < 3; i++) {
+  stuck.skills['sq-sum'] = updateSkill(stuck.skills['sq-sum'], false, levelFor(stuck, 'sq-sum'));
+}
+ok('כישלון חוזר ברמה 2 לא מקדם לרמה 3', levelFor(stuck, 'sq-sum') <= 2,
+  `רמה=${levelFor(stuck, 'sq-sum')}, topLevel=${stuck.skills['sq-sum'].maxCorrectLevel}`);
+
+let sk2 = updateSkill(sk, false, 3);
+ok('טעות אחת אחרי שליטה לא מאפסת', sk2.p > 0.5, `p=${sk2.p.toFixed(3)}`);
+let sk3 = updateSkill(emptyState().skills['sq-sum'], true, 1);
+ok('תשובה נכונה אחת לא מספיקה', sk3.p < MASTERY_THRESHOLD, `p=${sk3.p.toFixed(3)}`);
+
 ok('שליטה ביסוד פותחת את הבאה', isUnlocked(st, 'distribute-mono'));
+
+// תאימות לאחור: מצב שנשמר לפני שהוסף השדה החדש
+const legacy = normalizeState({ skills: { 'monomial-mult': { p: 0.95, attempts: 9, correct: 9, streak: 9 } } });
+ok('מצב ישן מקבל ברירת מחדל לשדה חדש',
+  legacy.skills['monomial-mult'].maxCorrectLevel === 0);
+ok('מצב ישן שומר על הערכים שהיו', legacy.skills['monomial-mult'].p === 0.95);
+ok('מצב ישן מקבל את כל המיומנויות', Object.keys(legacy.skills).length === SKILLS.length);
+
+ok('התקדמות לא מגיעה ל-100% בלי שליטה בפועל', overallProgress(stx) < 1);
 
 // -------------------------------------------------------------- דוח
 export function runAndReport(root) {

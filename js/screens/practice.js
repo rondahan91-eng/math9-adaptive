@@ -143,7 +143,7 @@ export function renderPractice(root, ctx, params = {}) {
 
     if (!scored) {
       scored = true;
-      ctx.state.skills[ex.skillId] = updateSkill(ctx.state.skills[ex.skillId], result.ok);
+      ctx.state.skills[ex.skillId] = updateSkill(ctx.state.skills[ex.skillId], result.ok, ex.level);
       if (result.ok) decayMisconceptions(ctx.state, ex.skillId);
       else if (misId) recordMisconception(ctx.state, misId, ex.skillId);
       ctx.state.history.push({
@@ -182,7 +182,7 @@ export function renderPractice(root, ctx, params = {}) {
     settled = true;
     if (!scored) {
       scored = true;
-      ctx.state.skills[ex.skillId] = updateSkill(ctx.state.skills[ex.skillId], false);
+      ctx.state.skills[ex.skillId] = updateSkill(ctx.state.skills[ex.skillId], false, ex.level);
       ctx.save();
     }
     paint(`<div class="feedback warn">

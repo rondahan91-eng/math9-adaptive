@@ -15,53 +15,77 @@ export const BKT = {
   pGuess: 0.15,  // לא שולט אבל צדק
 };
 
-export const MASTERY_THRESHOLD = 0.90; // מעל זה - המיומנות נחשבת נשלטת
-export const PREREQ_THRESHOLD = 0.70;  // מעל זה - מותר להתקדם למיומנות הבאה
+export const MASTERY_THRESHOLD = 0.90;   // הסתברות שליטה מינימלית
+export const MASTERY_MIN_ATTEMPTS = 4;   // מינימום ניסיונות - שתי תשובות אינן ראיה
+export const MASTERY_TOP_LEVEL = 3;      // חייבת תשובה נכונה אחת ברמה הגבוהה
+export const PREREQ_THRESHOLD = 0.70;    // מעל זה - מותר להתקדם למיומנות הבאה
 export const MISCONCEPTION_ACTIVE = 0.45;
+
+// ספי הרמות. נמוכים מספיק כדי שרמה 3 תוגש *לפני* שהשליטה נסגרת:
+// עם ספים גבוהים יותר ההסתברות קופצת מ-0.66 ל-0.93 ומדלגת על כל תחום
+// רמה 3, כך שהתלמיד/ה מסומן/ת כשולט/ת בלי שפתר/ה אף תרגיל קשה.
+export const LEVEL_2_AT = 0.30;
+export const LEVEL_3_AT = 0.60;
+
+const emptySkill = () => ({ p: BKT.pInit, attempts: 0, correct: 0, streak: 0, maxCorrectLevel: 0 });
 
 export function emptyState() {
   const skills = {};
-  for (const s of SKILLS) {
-    skills[s.id] = { p: BKT.pInit, attempts: 0, correct: 0, streak: 0 };
-  }
+  for (const s of SKILLS) skills[s.id] = emptySkill();
   return { skills, misconceptions: {}, history: [] };
 }
 
-/** מוודא שמצב ישן מהאחסון מכיל את כל המיומנויות (למשל אחרי הוספת נושא). */
+/**
+ * מוודא שמצב ישן מהאחסון תואם למבנה הנוכחי. המיזוג הוא *לכל מיומנות בנפרד*
+ * ולא ברמת האובייקט: מצב שנשמר לפני שהוסף שדה חדש חייב לקבל את ערך ברירת
+ * המחדל שלו, אחרת הוא יהיה undefined והשוואות מספריות עליו ייכשלו בשקט.
+ */
 export function normalizeState(state) {
   const base = emptyState();
   if (!state || typeof state !== 'object') return base;
-  const out = {
-    skills: { ...base.skills, ...(state.skills || {}) },
+  const skills = {};
+  for (const id of Object.keys(base.skills)) {
+    skills[id] = { ...base.skills[id], ...(state.skills?.[id] || {}) };
+  }
+  return {
+    skills,
     misconceptions: state.misconceptions || {},
     history: state.history || [],
   };
-  for (const id of Object.keys(out.skills)) {
-    if (!SKILL_BY_ID[id]) delete out.skills[id];
-  }
-  return out;
 }
 
-/** עדכון בייסיאני של הסתברות השליטה. */
-export function updateSkill(skill, correct) {
+/** עדכון בייסיאני של הסתברות השליטה. level נדרש כדי לתעד ראיה ברמה גבוהה. */
+export function updateSkill(skill, correct, level = 1) {
   const { pSlip, pGuess, pLearn } = BKT;
   const p = skill.p;
   const posterior = correct
     ? (p * (1 - pSlip)) / (p * (1 - pSlip) + (1 - p) * pGuess)
     : (p * pSlip) / (p * pSlip + (1 - p) * (1 - pGuess));
   const next = posterior + (1 - posterior) * pLearn;
+  const prevTop = skill.maxCorrectLevel || 0;
   return {
     ...skill,
     p: Math.max(0.01, Math.min(0.99, next)),
     attempts: skill.attempts + 1,
     correct: skill.correct + (correct ? 1 : 0),
     streak: correct ? skill.streak + 1 : 0,
+    maxCorrectLevel: correct ? Math.max(prevTop, level) : prevTop,
   };
 }
 
+/**
+ * שליטה דורשת שלושה תנאים, לא אחד:
+ *   1. הסתברות גבוהה
+ *   2. מספיק ניסיונות - שתי תשובות נכונות אינן ראיה, גם אם בייס מסכים
+ *   3. תשובה נכונה אחת לפחות ברמה הקשה - אחרת "נשלט" יכול להיקבע
+ *      על סמך תרגילים קלים בלבד
+ */
 export function isMastered(state, skillId) {
   const s = state.skills[skillId];
-  return !!s && s.p >= MASTERY_THRESHOLD;
+  if (!s) return false;
+  return s.p >= MASTERY_THRESHOLD
+    && s.attempts >= MASTERY_MIN_ATTEMPTS
+    && (s.maxCorrectLevel || 0) >= MASTERY_TOP_LEVEL;
 }
 
 export function isUnlocked(state, skillId) {
@@ -136,16 +160,34 @@ export function selectNextSkill(state) {
   return { skillId: all[0], reason: 'review' };
 }
 
-/** רמת הקושי בתוך המיומנות נגזרת מרמת השליטה הנוכחית. */
+/**
+ * רמת הקושי בתוך המיומנות - שני אילוצים יחד:
+ *
+ *   1. תקרה לפי ההסתברות (p)
+ *   2. **סולם**: לא מציעים יותר מרמה אחת מעל מה שכבר נפתר נכון
+ *
+ * האילוץ השני הוא ההכרחי. קפיצת ה-BKT אחרי תשובה נכונה אחת היא מ-0.20
+ * ל-0.66, ולכן גזירה מ-p בלבד *תמיד* מדלגת על רמה שלמה - לא משנה איפה
+ * נציב את הספים. הסולם מבטיח שהתלמיד/ה עולה שלב-שלב: 1 → 2 → 3.
+ * מי שנכשל/ת ברמה 2 יקבל/תקבל רמה 2 שוב, ולא יקודם/תקודם.
+ */
 export function levelFor(state, skillId) {
-  const p = state.skills[skillId]?.p ?? BKT.pInit;
-  if (p < 0.45) return 1;
-  if (p < 0.75) return 2;
-  return 3;
+  const s = state.skills[skillId];
+  const p = s?.p ?? BKT.pInit;
+  const byProbability = p < LEVEL_2_AT ? 1 : p < LEVEL_3_AT ? 2 : 3;
+  const byLadder = (s?.maxCorrectLevel || 0) + 1;
+  return Math.max(1, Math.min(byProbability, byLadder, MASTERY_TOP_LEVEL));
 }
 
-/** אחוז התקדמות כללי ביחידה - לתצוגה בלבד. */
+/**
+ * אחוז התקדמות כללי - לתצוגה בלבד. מיומנות שאינה נשלטת לא תורמת יותר מ-0.9,
+ * כדי שהמחוון לא יראה 100% בזמן ששום מיומנות לא נסגרה באמת.
+ */
 export function overallProgress(state) {
-  const values = SKILLS.map(s => Math.min(1, (state.skills[s.id]?.p ?? 0) / MASTERY_THRESHOLD));
+  const values = SKILLS.map(s => (
+    isMastered(state, s.id)
+      ? 1
+      : Math.min(0.9, (state.skills[s.id]?.p ?? 0) / MASTERY_THRESHOLD)
+  ));
   return values.reduce((a, b) => a + b, 0) / SKILLS.length;
 }
