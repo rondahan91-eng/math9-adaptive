@@ -12,6 +12,7 @@ import { api } from './api.js';
 import { misconception } from './curriculum/misconceptions.js';
 import { SKILL_BY_ID } from './curriculum/skills.js';
 import { renderVerified, failureNote } from './math/verify.js';
+import { setServerQuota, resetServerQuota, newQuestionId } from './learn/conversation.js';
 
 let status = null; // {available, reason}
 
@@ -23,13 +24,27 @@ export async function tutorAvailable() {
   return status;
 }
 
-export function resetTutorStatus() { status = null; }
+export function resetTutorStatus() {
+  status = null;
+  resetServerQuota();
+}
+
+/** טוען את המכסה מהשרת. השרת הוא מקור האמת; הלקוח רק מציג. */
+export async function loadQuota(studentId) {
+  if (!studentId) return null;
+  try {
+    const quota = await api.tutorQuota(studentId);
+    setServerQuota(quota);
+    return quota;
+  } catch { return null; }
+}
 
 /** בונה את שדות ההקשר שנשלחים לשרת. */
-function buildContext({ exercise, skillId, studentAnswer, misconceptionId, attempts, studentName, settled }) {
+function buildContext({ exercise, skillId, studentAnswer, misconceptionId, attempts, studentName, studentId, settled }) {
   const skill = SKILL_BY_ID[skillId || exercise?.skillId];
   const mis = misconceptionId ? misconception(misconceptionId) : null;
   return {
+    studentId,
     studentName: studentName || 'התלמיד/ה',
     skillTitle: skill?.title || '',
     rule: exercise?.rule || '',
@@ -52,10 +67,21 @@ async function callTutor(payload) {
   const s = await tutorAvailable();
   if (!s.available) return { available: false, reason: s.reason };
 
+  // אותו questionId גם בניסיון החוזר: כך השרת יודע שזו אותה שאלה
+  // ולא מחייב את המכסה פעמיים.
+  const questionId = newQuestionId();
+  const body = { ...payload, questionId };
+
+  // refundable=true רק כשלא הושלמה הלוך-חזור מול השרת. אם השרת ענה, המכסה
+  // שהוא החזיר היא הסמכות ואסור לגעת בה מהלקוח.
   let res;
-  try { res = await api.tutorHint(payload); }
-  catch (err) { return { available: false, reason: err.message }; }
-  if (!res || res.available === false) return { available: false, reason: res?.reason };
+  try { res = await api.tutorHint(body); }
+  catch (err) { return { available: false, reason: err.message, refundable: true }; }
+  if (!res || res.available === false) {
+    setServerQuota(res?.quota);
+    return { available: false, reason: res?.reason, refundable: !res?.quota };
+  }
+  setServerQuota(res.quota);
 
   let text = String(res.text || '').trim();
   let checked = renderVerified(text);
@@ -68,7 +94,8 @@ async function callTutor(payload) {
       { role: 'user', content: failureNote(checked.failures) },
     ];
     try {
-      const retry = await api.tutorHint({ ...payload, turns: retryTurns });
+      const retry = await api.tutorHint({ ...body, turns: retryTurns });
+      setServerQuota(retry?.quota);
       if (retry && retry.available !== false) {
         text = String(retry.text || '').trim();
         checked = renderVerified(text);
@@ -77,8 +104,10 @@ async function callTutor(payload) {
   }
 
   if (checked.failures.length) {
+    // השרת כבר גבה את השאלה - המודל ענה, התשובה פשוט לא עברה אימות
     return {
       available: false,
+      refundable: false,
       reason: 'המורה הפרטי לא הצליח לענות על השאלה הזו במדויק. נסו שאלה אחרת או קראו את ההסבר בשיעור.',
     };
   }
@@ -89,31 +118,31 @@ async function callTutor(payload) {
 /**
  * רמז חד-פעמי (הכפתור הישן). stage הוא 'hint' / 'why' / 'explain'.
  */
-export async function requestTutor({ exercise, studentAnswer, misconceptionId, stage, attempts, studentName }) {
+export async function requestTutor({ exercise, studentAnswer, misconceptionId, stage, attempts, studentName, studentId }) {
   return callTutor({
     stage: stage || 'hint',
-    ...buildContext({ exercise, studentAnswer, misconceptionId, attempts, studentName }),
+    ...buildContext({ exercise, studentAnswer, misconceptionId, attempts, studentName, studentId }),
   });
 }
 
 /**
  * סבב שיחה. thread.turns כבר מכיל את השאלה החדשה.
  */
-export async function askTutor({ exercise, thread, studentAnswer, misconceptionId, attempts, studentName, settled, contextKind }) {
+export async function askTutor({ exercise, thread, studentAnswer, misconceptionId, attempts, studentName, studentId, settled, contextKind }) {
   return callTutor({
     stage: 'chat',
     contextKind: contextKind || 'practice',
-    ...buildContext({ exercise, studentAnswer, misconceptionId, attempts, studentName, settled }),
+    ...buildContext({ exercise, studentAnswer, misconceptionId, attempts, studentName, studentId, settled }),
     turns: thread.turns,
   });
 }
 
 /** שיחה בעמוד השיעור - אין תרגיל, יש מיומנות. */
-export async function askAboutLesson({ skillId, rule, thread, studentName }) {
+export async function askAboutLesson({ skillId, rule, thread, studentName, studentId }) {
   return callTutor({
     stage: 'chat',
     contextKind: 'lesson',
-    ...buildContext({ exercise: { rule }, skillId, studentName }),
+    ...buildContext({ exercise: { rule }, skillId, studentName, studentId }),
     turns: thread.turns,
   });
 }

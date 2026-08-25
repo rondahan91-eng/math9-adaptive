@@ -10,7 +10,7 @@ import { escapeHtml, progressBar } from '../ui.js';
 import { askAboutLesson } from '../tutor.js';
 import {
   newThread, pushQuestion, pushAnswer, dropLastQuestion, threadFull,
-  preparedQuestions, questionsLeft, recordQuestion,
+  preparedQuestions, questionsLeft, recordQuestion, refundQuestion,
 } from '../learn/conversation.js';
 
 export function renderLesson(root, ctx, params) {
@@ -110,11 +110,18 @@ function wireLessonTutor(host, ctx, skill) {
       rule: skill.short,
       thread,
       studentName: ctx.user.displayName,
+      studentId: ctx.user.studentId,
     });
 
     busy = false;
-    if (res.available) pushAnswer(thread, res.text, res.html);
-    else { dropLastQuestion(thread); error = res.reason || 'המורה הפרטי אינו זמין כרגע.'; }
+    if (res.available) {
+      pushAnswer(thread, res.text, res.html);
+    } else {
+      dropLastQuestion(thread);
+      if (res.refundable) refundQuestion(ctx.state);
+      error = res.reason || 'המורה הפרטי אינו זמין כרגע.';
+    }
+    ctx.save();
     paint();
   }
 

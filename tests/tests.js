@@ -19,7 +19,8 @@ import { renderExpr, renderInline } from '../js/math/render.js';
 import { checkClaim, renderVerified, failureNote } from '../js/math/verify.js';
 import {
   newThread, pushQuestion, dropLastQuestion, threadFull, preparedQuestions,
-  questionsLeft, recordQuestion, DAILY_LIMIT, TURNS_PER_EXERCISE,
+  questionsLeft, recordQuestion, refundQuestion, setServerQuota, resetServerQuota,
+  hasServerQuota, newQuestionId, DAILY_LIMIT, TURNS_PER_EXERCISE,
 } from '../js/learn/conversation.js';
 import { LESSONS } from '../js/curriculum/lessons.js';
 import {
@@ -205,6 +206,7 @@ ok('טענה שגויה אינה מרונדרת', !bad.html.includes('x<sup>2</s
 ok('הודעת התיקון מכילה את הטענה', failureNote(bad.failures).includes('(x+4)^2 = x^2+16'));
 
 group('מכסת שאלות ושאלות מוכנות');
+resetServerQuota();
 const qs = emptyState();
 ok('מתחילים עם המכסה המלאה', questionsLeft(qs) === DAILY_LIMIT);
 recordQuestion(qs); recordQuestion(qs);
@@ -212,6 +214,29 @@ ok('כל שאלה מורידה אחת', questionsLeft(qs) === DAILY_LIMIT - 2);
 qs.tutorUsage = { date: '2020-01-01', count: DAILY_LIMIT };
 ok('מכסה מיום קודם אינה נספרת', questionsLeft(qs) === DAILY_LIMIT);
 ok('...והיא אינה נצברת מעבר למקסימום', questionsLeft(qs) <= DAILY_LIMIT);
+
+// -------- אכיפה בצד השרת: השרת גובר על הספירה המקומית
+const cheat = emptyState();
+cheat.tutorUsage = null; // כאילו נוקה localStorage
+setServerQuota({ limit: DAILY_LIMIT, used: DAILY_LIMIT, left: 0, date: '2026-01-01' });
+ok('ניקוי הספירה המקומית לא מאפס את המכסה', questionsLeft(cheat) === 0);
+ok('מצב מכסת שרת מזוהה', hasServerQuota());
+
+setServerQuota({ limit: DAILY_LIMIT, used: 3, left: 12, date: '2026-01-01' });
+ok('מכסת השרת גוברת על המקומית', questionsLeft(cheat) === 12);
+recordQuestion(cheat);
+ok('ספירה אופטימית מזיזה את המונה מיד', questionsLeft(cheat) === 11);
+refundQuestion(cheat);
+ok('החזרה מבטלת את הספירה האופטימית', questionsLeft(cheat) === 12);
+setServerQuota({ limit: DAILY_LIMIT, used: 9, left: 6, date: '2026-01-01' });
+ok('תשובת השרת דורסת את ההערכה המקומית', questionsLeft(cheat) === 6);
+setServerQuota(null);
+ok('ערך לא תקין מהשרת אינו הורס את המצב', questionsLeft(cheat) === 6);
+resetServerQuota();
+ok('איפוס מחזיר לספירה המקומית', questionsLeft(qs) === DAILY_LIMIT);
+
+const idA = newQuestionId(), idB = newQuestionId();
+ok('מזהה שאלה ייחודי', idA !== idB && idA.startsWith('q_'));
 
 ok('אין שאלות לפני ניסיון ראשון',
   preparedQuestions({ context: 'practice', attempts: 0 }).length === 0);

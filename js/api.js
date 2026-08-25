@@ -44,6 +44,10 @@ async function devCall(action, payload) {
     case 'tutorStatus':
       return { available: false, reason: 'מצב פיתוח מקומי - לא מוגדר מפתח API' };
 
+    case 'tutorQuota':
+      // אין שרת במצב פיתוח, ולכן אין אכיפה - הלקוח סופר לבד
+      return null;
+
     case 'tutorHint':
       return { available: false, text: '' };
 
@@ -112,5 +116,6 @@ export const api = {
   fetchMyProgress: (studentId) => call('fetchMyProgress', { studentId }),
   fetchClassProgress: () => call('fetchClassProgress', {}),
   tutorStatus: () => call('tutorStatus', {}),
+  tutorQuota: (studentId) => call('tutorQuota', { studentId }),
   tutorHint: (context) => call('tutorHint', context),
 };

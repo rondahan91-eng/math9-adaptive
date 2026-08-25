@@ -13,6 +13,24 @@ export const TURNS_PER_EXERCISE = 6;
 const today = () => new Date().toISOString().slice(0, 10);
 
 /**
+ * **השרת הוא מקור האמת למכסה.** הספירה המקומית קיימת רק לשני דברים: עדכון
+ * מיידי של המונה על המסך לפני שהתשובה חוזרת, ומצב פיתוח מקומי שאין בו שרת.
+ * ניקוי localStorage לא מאפס את המגבלה - השרת ידחה את הבקשה הבאה.
+ */
+let serverQuota = null;
+
+export function setServerQuota(quota) {
+  if (quota && typeof quota.left === 'number') serverQuota = quota;
+}
+export function resetServerQuota() { serverQuota = null; }
+export const hasServerQuota = () => serverQuota !== null;
+
+/** מזהה ייחודי לשאלה. אותו מזהה בניסיון החוזר - כדי שלא ייספר פעמיים. */
+export function newQuestionId() {
+  return 'q_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+/**
  * המכסה **אינה נצברת**: יום חדש מאפס ל-15, ומה שלא נוצל אתמול לא עובר.
  * זו החלטה מכוונת - מכסה נצברת מייצרת "חיסכון" ואז מפולת שימוש ביום אחד.
  */
@@ -23,12 +41,34 @@ export function tutorUsage(state) {
 }
 
 export function questionsLeft(state) {
+  if (serverQuota) return Math.max(0, serverQuota.left);
   return Math.max(0, DAILY_LIMIT - tutorUsage(state).count);
 }
 
+/** ספירה אופטימית, כדי שהמונה יזוז מיד. השרת יתקן אותה בתשובה. */
 export function recordQuestion(state) {
   const usage = tutorUsage(state);
   state.tutorUsage = { date: usage.date, count: usage.count + 1 };
+  if (serverQuota) {
+    serverQuota = {
+      ...serverQuota,
+      used: serverQuota.used + 1,
+      left: Math.max(0, serverQuota.left - 1),
+    };
+  }
+}
+
+/** ביטול הספירה האופטימית כשהבקשה נכשלה לפני שהגיעה לשרת. */
+export function refundQuestion(state) {
+  const usage = tutorUsage(state);
+  state.tutorUsage = { date: usage.date, count: Math.max(0, usage.count - 1) };
+  if (serverQuota) {
+    serverQuota = {
+      ...serverQuota,
+      used: Math.max(0, serverQuota.used - 1),
+      left: serverQuota.left + 1,
+    };
+  }
 }
 
 // -------------------------------------------------------------- שאלות מוכנות

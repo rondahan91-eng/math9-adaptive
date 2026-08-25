@@ -11,7 +11,7 @@ import { renderHome } from './screens/home.js';
 import { renderLesson } from './screens/lesson.js';
 import { renderPractice } from './screens/practice.js';
 import { renderDashboard } from './screens/dashboard.js';
-import { tutorAvailable, resetTutorStatus } from './tutor.js';
+import { tutorAvailable, resetTutorStatus, loadQuota } from './tutor.js';
 
 const root = document.getElementById('app');
 const header = document.getElementById('app-header');
@@ -73,6 +73,7 @@ async function onLogin(user) {
   await loadProgress();
   resetTutorStatus();
   ctx.tutor = await tutorAvailable();
+  if (ctx.tutor.available && user.role !== 'admin') await loadQuota(user.studentId);
   navigate(user.role === 'admin' ? 'dashboard' : 'home');
 }
 
@@ -117,6 +118,7 @@ function saveProgress() {
       ctx.user = saved;
       await loadProgress();
       ctx.tutor = await tutorAvailable();
+      if (ctx.tutor.available && saved.role !== 'admin') await loadQuota(saved.studentId);
       current = { name: saved.role === 'admin' ? 'dashboard' : 'home', params: {} };
     }
   } catch { /* אין סשן שמור */ }

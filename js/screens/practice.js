@@ -22,7 +22,7 @@ import { escapeHtml, symbolBar, wireSymbolBar, progressBar } from '../ui.js';
 import { askTutor } from '../tutor.js';
 import {
   newThread, pushQuestion, pushAnswer, dropLastQuestion, threadFull,
-  preparedQuestions, questionsLeft, recordQuestion, TURNS_PER_EXERCISE,
+  preparedQuestions, questionsLeft, recordQuestion, refundQuestion, TURNS_PER_EXERCISE,
 } from '../learn/conversation.js';
 
 export function renderPractice(root, ctx, params = {}) {
@@ -192,6 +192,7 @@ export function renderPractice(root, ctx, params = {}) {
       attempts,
       settled,
       studentName: ctx.user.displayName,
+      studentId: ctx.user.studentId,
       contextKind: 'practice',
     });
 
@@ -200,8 +201,11 @@ export function renderPractice(root, ctx, params = {}) {
       pushAnswer(thread, res.text, res.html);
     } else {
       dropLastQuestion(thread);
+      // מבטלים את הספירה האופטימית רק אם השרת לא ספר בעצמו
+      if (res.refundable) refundQuestion(ctx.state);
       tutorError = res.reason || 'המורה הפרטי אינו זמין כרגע.';
     }
+    ctx.save();
     paint(card.querySelector('#feedback')?.innerHTML || '');
   }
 

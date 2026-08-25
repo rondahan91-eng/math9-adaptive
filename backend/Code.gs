@@ -14,6 +14,11 @@
 
 var SHEET_USERS = 'Users';
 var SHEET_PROGRESS = 'Progress';
+var SHEET_TUTOR = 'TutorUsage';
+
+// המכסה היומית מוגדרת **כאן ולא בלקוח**. הלקוח מציג את מה שהשרת מחזיר,
+// ולא סופר בעצמו - אחרת ניקוי localStorage היה מאפס את המגבלה.
+var TUTOR_DAILY_LIMIT = 15;
 
 // -------------------------------------------------------------- הגדרות ה-AI
 var CLAUDE_MODEL = 'claude-opus-5';
@@ -117,6 +122,7 @@ function routeAction(action, p) {
     case 'fetchMyProgress': return fetchMyProgress(p.studentId);
     case 'fetchClassProgress': return fetchClassProgress();
     case 'tutorStatus': return tutorStatus();
+    case 'tutorQuota': return tutorQuota(p.studentId);
     case 'tutorHint': return tutorHint(p);
     default: throw new Error('פעולה לא מוכרת: ' + action);
   }
@@ -138,6 +144,8 @@ function createSheet(ss, name) {
     sheet.appendRow(['demo1', 'demo', sha256('demo1234'), 'student', 'תלמיד/ה לדוגמה', 'ט1', new Date()]);
   } else if (name === SHEET_PROGRESS) {
     sheet.appendRow(['studentId', 'stateJson', 'updatedAt']);
+  } else if (name === SHEET_TUTOR) {
+    sheet.appendRow(['studentId', 'date', 'count', 'lastQuestionId', 'retryUsed', 'updatedAt']);
   }
   sheet.setFrozenRows(1);
   return sheet;
@@ -249,9 +257,113 @@ function tutorStatus() {
   };
 }
 
+// -------------------------------------------------------------- מכסה יומית
+function todayStamp() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
+/** מאתר את שורת המכסה של התלמיד/ה, או יוצר אותה. מחזיר {row, values}. */
+function tutorRow(sheet, studentId) {
+  var values = sheet.getDataRange().getValues();
+  for (var r = 1; r < values.length; r++) {
+    if (values[r][0] === studentId) return { row: r + 1, values: values[r] };
+  }
+  sheet.appendRow([studentId, todayStamp(), 0, '', false, new Date()]);
+  return { row: sheet.getLastRow(), values: [studentId, todayStamp(), 0, '', false, new Date()] };
+}
+
+function quotaOf(studentId) {
+  if (!studentId) throw new Error('חסר מזהה תלמיד');
+  var sheet = getSheet(SHEET_TUTOR);
+  var found = tutorRow(sheet, studentId);
+  var sameDay = String(found.values[1]) === todayStamp();
+  var used = sameDay ? (Number(found.values[2]) || 0) : 0;
+  return {
+    sheet: sheet,
+    row: found.row,
+    values: found.values,
+    sameDay: sameDay,
+    used: used,
+    limit: TUTOR_DAILY_LIMIT,
+    left: Math.max(0, TUTOR_DAILY_LIMIT - used),
+  };
+}
+
+function tutorQuota(studentId) {
+  var q = quotaOf(studentId);
+  return { limit: q.limit, used: q.used, left: q.left, date: todayStamp() };
+}
+
+/**
+ * תופס שאלה אחת מהמכסה. נעילה כדי ששתי בקשות במקביל לא ייספרו כאחת.
+ *
+ * questionId מאפשר **ניסיון חוזר אחד** בלי לחייב את המכסה: כשהאימות המתמטי
+ * נכשל, הלקוח שולח שוב עם אותו מזהה. הדגל retryUsed מבטיח שזה קורה פעם אחת
+ * בלבד לכל שאלה, כך שאי אפשר לקבל שאלות חינם על ידי שליחה חוזרת.
+ */
+function claimQuestion(studentId, questionId) {
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); }
+  catch (e) { return { ok: false, reason: 'השרת עמוס, נסו שוב בעוד רגע' }; }
+
+  try {
+    var q = quotaOf(studentId);
+    var isRetry = questionId
+      && String(q.values[3]) === String(questionId)
+      && q.sameDay
+      && q.values[4] !== true && String(q.values[4]).toLowerCase() !== 'true';
+
+    if (isRetry) {
+      q.sheet.getRange(q.row, 5).setValue(true); // ניסיון חוזר אחד נוצל
+      q.sheet.getRange(q.row, 6).setValue(new Date());
+      return { ok: true, quota: { limit: q.limit, used: q.used, left: q.left, date: todayStamp() } };
+    }
+
+    if (q.left <= 0) {
+      return {
+        ok: false,
+        reason: 'נגמרו השאלות להיום. המכסה מתחדשת מחר.',
+        quota: { limit: q.limit, used: q.used, left: 0, date: todayStamp() },
+      };
+    }
+
+    var used = q.used + 1;
+    q.sheet.getRange(q.row, 2).setValue(todayStamp());
+    q.sheet.getRange(q.row, 3).setValue(used);
+    q.sheet.getRange(q.row, 4).setValue(questionId || '');
+    q.sheet.getRange(q.row, 5).setValue(false);
+    q.sheet.getRange(q.row, 6).setValue(new Date());
+    return {
+      ok: true,
+      quota: { limit: q.limit, used: used, left: Math.max(0, q.limit - used), date: todayStamp() },
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** מחזיר שאלה למכסה כשהקריאה ל-Claude נכשלה - אין סיבה לחייב על כשל שלנו. */
+function refundQuestion(studentId) {
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(10000); } catch (e) { return null; }
+  try {
+    var q = quotaOf(studentId);
+    var used = Math.max(0, q.used - 1);
+    q.sheet.getRange(q.row, 3).setValue(used);
+    q.sheet.getRange(q.row, 6).setValue(new Date());
+    return { limit: q.limit, used: used, left: Math.max(0, q.limit - used), date: todayStamp() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function tutorHint(p) {
   var key = getApiKey();
   if (!key) return { available: false, reason: 'לא הוגדר מפתח API בשרת' };
+  if (!p.studentId) return { available: false, reason: 'חסר מזהה תלמיד' };
+
+  var claim = claimQuestion(p.studentId, p.questionId);
+  if (!claim.ok) return { available: false, reason: claim.reason, quota: claim.quota };
 
   // ההקשר מפוצל לשניים בכוונה. החלק הראשון קבוע לאורך כל התרגיל ולכן הוא
   // מסומן ב-cache_control: כל שאלה נוספת באותו תרגיל קוראת אותו מהמטמון.
@@ -324,18 +436,26 @@ function tutorHint(p) {
   var text = res.getContentText();
   if (code !== 200) {
     Logger.log('Claude error ' + code + ': ' + text);
-    return { available: false, reason: 'שגיאה מהשירות (' + code + ')' };
+    return {
+      available: false,
+      reason: 'שגיאה מהשירות (' + code + ')',
+      quota: refundQuestion(p.studentId),
+    };
   }
 
   var data = JSON.parse(text);
   if (data.stop_reason === 'refusal') {
-    return { available: false, reason: 'הבקשה נדחתה על ידי מסנני הבטיחות' };
+    return {
+      available: false,
+      reason: 'הבקשה נדחתה על ידי מסנני הבטיחות',
+      quota: refundQuestion(p.studentId),
+    };
   }
   var out = '';
   (data.content || []).forEach(function (block) {
     if (block.type === 'text') out += block.text;
   });
-  return { available: true, text: out.trim() };
+  return { available: true, text: out.trim(), quota: claim.quota };
 }
 
 /** להרצה ידנית מעורך הסקריפטים כדי לוודא שהמפתח עובד. */
