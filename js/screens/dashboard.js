@@ -13,6 +13,7 @@ import {
   MISCONCEPTION_ACTIVE, MASTERY_THRESHOLD,
 } from '../learn/mastery.js';
 import { escapeHtml, progressBar, fmtPercent, timeAgo, toast } from '../ui.js';
+import { CONFIG } from '../config.js';
 
 export function renderDashboard(root, ctx) {
   root.innerHTML = `<div class="card"><p class="muted">טוען נתוני כיתה…</p></div>`;
@@ -54,7 +55,8 @@ function paint(root, ctx, rows) {
       <h1>מעקב כיתה</h1>
       <p class="muted" style="margin:0">
         ${students.length} תלמידים רשומים · ${withData.length} התחילו לתרגל
-        ${ctx.tutor.available ? '' : ' · <span class="badge warn">המורה הפרטי כבוי</span>'}
+        ${CONFIG.TUTOR_ENABLED && !ctx.tutor.available
+          ? ' · <span class="badge warn">המורה הפרטי לא זמין</span>' : ''}
       </p>
     </div>
 

@@ -9,6 +9,7 @@
 // עם התיקון מהמנוע. שוויון שגוי לא מגיע למסך.
 
 import { api } from './api.js';
+import { CONFIG } from './config.js';
 import { misconception } from './curriculum/misconceptions.js';
 import { SKILL_BY_ID } from './curriculum/skills.js';
 import { renderVerified, failureNote } from './math/verify.js';
@@ -17,6 +18,10 @@ import { setServerQuota, resetServerQuota, newQuestionId } from './learn/convers
 let status = null; // {available, reason}
 
 export async function tutorAvailable() {
+  // הדגל בלקוח חוסם לפני כל פנייה לשרת: כשהתכונה כבויה אין אפילו קריאת רשת
+  if (!CONFIG.TUTOR_ENABLED) {
+    return { available: false, reason: 'המורה הפרטי אינו מופעל במערכת' };
+  }
   if (status === null) {
     try { status = await api.tutorStatus(); }
     catch (err) { status = { available: false, reason: err.message }; }

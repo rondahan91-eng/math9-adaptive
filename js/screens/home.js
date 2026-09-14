@@ -12,6 +12,13 @@ import {
 } from '../learn/mastery.js';
 import { misconception } from '../curriculum/misconceptions.js';
 import { progressBar, escapeHtml, fmtPercent } from '../ui.js';
+import { CONFIG } from '../config.js';
+
+/**
+ * מציגים אזהרה רק כשהתכונה *אמורה* לעבוד ולא עובדת. כשהיא כבויה בכוונה אין
+ * מה להודיע - תווית "כבוי" קבועה רק מפרסמת תכונה שאינה קיימת.
+ */
+const tutorMisconfigured = (ctx) => CONFIG.TUTOR_ENABLED && !ctx.tutor.available;
 
 export function renderHome(root, ctx) {
   const { state } = ctx;
@@ -29,6 +36,10 @@ export function renderHome(root, ctx) {
         <button class="primary" data-practice>המשך לתרגל</button>
       </div>
       ${progressBar(overallProgress(state))}
+      ${tutorMisconfigured(ctx) ? `<p class="muted" style="margin-top:.5rem;margin-bottom:0">
+        <span class="badge warn">המורה הפרטי לא זמין</span>
+        ${escapeHtml(ctx.tutor.reason || '')}
+      </p>` : ''}
       <p class="muted" style="margin-top:.8rem;margin-bottom:0">
         ${next.reason === 'remediation'
           ? `הצעד הבא: חזרה על <strong>${escapeHtml(nextSkill.title)}</strong> — יש שם נקודה שכדאי לסגור.`
@@ -36,10 +47,6 @@ export function renderHome(root, ctx) {
             ? `שלטת בכל היחידה. הצעד הבא הוא חזרה על <strong>${escapeHtml(nextSkill.title)}</strong>.`
             : `הצעד הבא: <strong>${escapeHtml(nextSkill.title)}</strong>`}
       </p>
-      ${ctx.tutor.available ? '' : `<p class="muted" style="margin-top:.5rem;margin-bottom:0">
-        <span class="badge warn">המורה הפרטי כבוי</span>
-        ${escapeHtml(ctx.tutor.reason || 'לא מוגדר מפתח API בשרת')}
-      </p>`}
     </div>
 
     ${active.length ? `

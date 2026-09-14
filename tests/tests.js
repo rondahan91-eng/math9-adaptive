@@ -17,6 +17,9 @@ import { MISCONCEPTIONS } from '../js/curriculum/misconceptions.js';
 import { SKILLS, topoOrder } from '../js/curriculum/skills.js';
 import { renderExpr, renderInline } from '../js/math/render.js';
 import { checkClaim, renderVerified, failureNote } from '../js/math/verify.js';
+import { CONFIG } from '../js/config.js';
+import { api } from '../js/api.js';
+import { tutorAvailable, resetTutorStatus } from '../js/tutor.js';
 import {
   newThread, pushQuestion, dropLastQuestion, threadFull, preparedQuestions,
   questionsLeft, recordQuestion, refundQuestion, setServerQuota, resetServerQuota,
@@ -237,6 +240,19 @@ ok('איפוס מחזיר לספירה המקומית', questionsLeft(qs) === DA
 
 const idA = newQuestionId(), idB = newQuestionId();
 ok('מזהה שאלה ייחודי', idA !== idB && idA.startsWith('q_'));
+
+// -------- מתג הכיבוי: כשהתכונה כבויה אין אפילו פנייה לשרת
+let statusCalls = 0;
+const realStatus = api.tutorStatus;
+api.tutorStatus = async () => { statusCalls++; return { available: true, reason: '' }; };
+resetTutorStatus();
+const availability = await tutorAvailable();
+api.tutorStatus = realStatus;
+resetTutorStatus();
+ok(`הדגל TUTOR_ENABLED=${CONFIG.TUTOR_ENABLED} נאכף`,
+  CONFIG.TUTOR_ENABLED ? availability.available : !availability.available);
+ok('כשהתכונה כבויה לא נשלחת בקשה לשרת',
+  CONFIG.TUTOR_ENABLED ? statusCalls === 1 : statusCalls === 0);
 
 ok('אין שאלות לפני ניסיון ראשון',
   preparedQuestions({ context: 'practice', attempts: 0 }).length === 0);
