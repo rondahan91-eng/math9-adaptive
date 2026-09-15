@@ -198,6 +198,40 @@ export function polyKey(p) {
     .join('+') || '0';
 }
 
+/**
+ * הדפסת פולינום כטקסט שאפשר גם להציג לתלמיד וגם להזין בחזרה לפרסר.
+ * זה מה שמאפשר לגנרטורים לבנות את התשובה הנכונה ע"י *חישוב* במקום ע"י
+ * הרכבת מחרוזות ביד - ולכן תשובה שגויה בגנרטור הופכת לבלתי אפשרית כמעט.
+ *
+ * מקדם שברי נכתב כ-"3x/4" ולא כ-"3/4x": הצורה השנייה דו-משמעית מול הפרסר,
+ * שעשוי לקרוא אותה כ-3 חלקי 4x.
+ */
+export function polyToText(p) {
+  const terms = sortedTerms(p);
+  if (terms.length === 0) return '0';
+  let out = '';
+  for (const t of terms) {
+    const neg = isNegative(t.coef);
+    const c = neg ? rNeg(t.coef) : t.coef;
+    const mono = Object.keys(t.vars).sort()
+      .map(v => (t.vars[v] === 1 ? v : `${v}^${t.vars[v]}`))
+      .join('');
+    // מקדם 1 אינו נכתב - גם כשהוא חלק משבר: x²/4, לא 1x²/4
+    let piece;
+    if (!mono) piece = ratToString(c);
+    else if (c.d === 1) piece = `${c.n === 1 ? '' : c.n}${mono}`;
+    else piece = `${c.n === 1 ? '' : c.n}${mono}/${c.d}`;
+    out += out ? `${neg ? ' - ' : ' + '}${piece}` : `${neg ? '-' : ''}${piece}`;
+  }
+  return out;
+}
+
+/** אותו דבר לפונקציה רציונלית. מכנה קבוע נבלע לתוך המקדמים. */
+export function rfToText(a) {
+  if (rfIsPoly(a)) return polyToText(rfToPoly(a));
+  return `(${polyToText(a.num)})/(${polyToText(a.den)})`;
+}
+
 // -------------------------------------------------------------- חילוק פולינומים
 /**
  * חילוק ארוך לפי משתנה v. מחזיר {quotient, remainder} או null אם לא ניתן

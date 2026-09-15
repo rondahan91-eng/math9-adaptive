@@ -16,16 +16,19 @@ export const BKT = {
 };
 
 export const MASTERY_THRESHOLD = 0.90;   // הסתברות שליטה מינימלית
-export const MASTERY_MIN_ATTEMPTS = 4;   // מינימום ניסיונות - שתי תשובות אינן ראיה
-export const MASTERY_TOP_LEVEL = 3;      // חייבת תשובה נכונה אחת ברמה הגבוהה
+export const MASTERY_TOP_LEVEL = 5;      // חייבת תשובה נכונה אחת ברמה הגבוהה
+export const MASTERY_MIN_ATTEMPTS = 6;   // סולם של 5 רמות + ראיה אחת נוספת
 export const PREREQ_THRESHOLD = 0.70;    // מעל זה - מותר להתקדם למיומנות הבאה
 export const MISCONCEPTION_ACTIVE = 0.45;
 
-// ספי הרמות. נמוכים מספיק כדי שרמה 3 תוגש *לפני* שהשליטה נסגרת:
-// עם ספים גבוהים יותר ההסתברות קופצת מ-0.66 ל-0.93 ומדלגת על כל תחום
-// רמה 3, כך שהתלמיד/ה מסומן/ת כשולט/ת בלי שפתר/ה אף תרגיל קשה.
-export const LEVEL_2_AT = 0.30;
-export const LEVEL_3_AT = 0.60;
+/**
+ * ספי ההסתברות לרמות 2..5. הם נמוכים בכוונה: ההסתברות הבייסיאנית רוויה מהר
+ * (0.20 → 0.66 → 0.93 → 0.99 אחרי שלוש תשובות נכונות), ולכן היא לבדה אינה
+ * יכולה לשמש כשלב-מדרגה. מי שקובע את הקצב בפועל הוא הסולם ב-levelFor:
+ * הרמה הבאה נפתחת רק אחרי תשובה נכונה ברמה הנוכחית. הספים כאן רק *מורידים*
+ * את הרמה כשההסתברות צונחת אחרי טעויות.
+ */
+export const LEVEL_BANDS = [0.30, 0.60, 0.85, 0.95];
 
 const emptySkill = () => ({ p: BKT.pInit, attempts: 0, correct: 0, streak: 0, maxCorrectLevel: 0 });
 
@@ -169,13 +172,14 @@ export function selectNextSkill(state) {
  *
  * האילוץ השני הוא ההכרחי. קפיצת ה-BKT אחרי תשובה נכונה אחת היא מ-0.20
  * ל-0.66, ולכן גזירה מ-p בלבד *תמיד* מדלגת על רמה שלמה - לא משנה איפה
- * נציב את הספים. הסולם מבטיח שהתלמיד/ה עולה שלב-שלב: 1 → 2 → 3.
+ * נציב את הספים. הסולם מבטיח שהתלמיד/ה עולה שלב-שלב: 1 → 2 → 3 → 4 → 5.
  * מי שנכשל/ת ברמה 2 יקבל/תקבל רמה 2 שוב, ולא יקודם/תקודם.
  */
 export function levelFor(state, skillId) {
   const s = state.skills[skillId];
   const p = s?.p ?? BKT.pInit;
-  const byProbability = p < LEVEL_2_AT ? 1 : p < LEVEL_3_AT ? 2 : 3;
+  let byProbability = 1;
+  for (const band of LEVEL_BANDS) if (p >= band) byProbability++;
   const byLadder = (s?.maxCorrectLevel || 0) + 1;
   return Math.max(1, Math.min(byProbability, byLadder, MASTERY_TOP_LEVEL));
 }

@@ -284,7 +284,7 @@ for (const skill of SKILLS) {
   ok(`קיים שיעור ל-${skill.title}`, !!LESSONS[skill.id]);
   if (!GENERATORS[skill.id]) continue;
 
-  for (let level = 1; level <= 3; level++) {
+  for (let level = 1; level <= MASTERY_TOP_LEVEL; level++) {
     for (let s = 0; s < SEEDS; s++) {
       total++;
       let exercise;
@@ -296,7 +296,8 @@ for (const skill of SKILLS) {
       }
 
       // 0. שום תרגיל לא מציג את הסימן ^ על המסך
-      for (const [what, text] of [['השאלה', exercise.exprText], ['התשובה', exercise.answerText], ['הכלל', exercise.rule]]) {
+      for (const [what, text] of [['השאלה', exercise.exprText], ['התשובה', exercise.answerText],
+        ['הכלל', exercise.rule], ['ההנחיה', exercise.prompt], ['הפתרון', exercise.solutionText]]) {
         if (text && !noCaret(renderExpr(text))) {
           renderFail++;
           failures.push(`${skill.id} L${level}: ${what} "${text}" מוצגת עם הסימן ^`);
@@ -313,8 +314,11 @@ for (const skill of SKILLS) {
       }
 
       // 2. כל תשובה שגויה חזויה חייבת להיות באמת שונה מהנכונה
+      const targetRf = exercise.target?.den
+        ? exercise.target
+        : (exercise.target?.terms ? ratFunc(exercise.target, pOne()) : null);
       for (const wrong of exercise.wrongs || []) {
-        if (wrong.poly && exercise.target?.terms && pEqual(wrong.poly, exercise.target)) {
+        if (wrong.rf && targetRf && rfEqual(wrong.rf, targetRf)) {
           wrongFail++;
           failures.push(`${skill.id} L${level}: "${exercise.exprText}" — התפיסה "${wrong.id}" מייצרת תשובה נכונה`);
           continue;
@@ -322,7 +326,7 @@ for (const skill of SKILLS) {
         // 3. ...וחייבת להיות מאובחנת (לא בהכרח לאותו id, אם שתי תפיסות מתלכדות)
         const fake = wrong.roots
           ? { ok: false, reason: 'value', roots: wrong.roots }
-          : { ok: false, reason: 'value', value: ratFunc(wrong.poly, pOne()) };
+          : { ok: false, reason: 'value', value: wrong.rf };
         const found = diagnose(exercise, fake);
         if (!found) {
           diagFail++;
@@ -341,7 +345,7 @@ group('שלמות התוכן');
 const usedMis = new Set();
 for (const skill of SKILLS) {
   if (!GENERATORS[skill.id]) continue;
-  for (let level = 1; level <= 3; level++) {
+  for (let level = 1; level <= MASTERY_TOP_LEVEL; level++) {
     for (let s = 0; s < 20; s++) {
       const e = generateExercise(skill.id, level, s * 31 + 5);
       (e.wrongs || []).forEach(w => usedMis.add(w.id));
@@ -379,30 +383,37 @@ ok('אבל שתיים אינן "נשלט" — חסרים ניסיונות', !isM
   `attempts=${sk.attempts}, topLevel=${sk.maxCorrectLevel}`);
 
 sk = drill(st, 'monomial-mult', [true, true]);
-ok('ארבע נכונות כולל רמה 3 — נשלט', isMastered(st, 'monomial-mult'),
+ok('גם ארבע נכונות אינן מספיקות — הסולם עוד לא הגיע לראש', !isMastered(st, 'monomial-mult'),
+  `attempts=${sk.attempts}, topLevel=${sk.maxCorrectLevel}`);
+
+sk = drill(st, 'monomial-mult', [true, true]);
+ok(`שש נכונות כולל רמה ${MASTERY_TOP_LEVEL} — נשלט`, isMastered(st, 'monomial-mult'),
   `p=${sk.p.toFixed(3)}, attempts=${sk.attempts}, topLevel=${sk.maxCorrectLevel}`);
 ok('הראיה נרשמה ברמה הגבוהה', sk.maxCorrectLevel >= MASTERY_TOP_LEVEL);
 
 // הבאג שתוקן: אי אפשר להיקבע כשולט בלי לפתור תרגיל ברמה הגבוהה
 const stx = emptyState();
 stx.skills['sq-sum'] = { p: 0.99, attempts: 20, correct: 20, streak: 20, maxCorrectLevel: 2 };
-ok('p גבוה בלי ראיה ברמה 3 אינו שליטה', !isMastered(stx, 'sq-sum'));
-ok('...והמנוע מגיש דווקא רמה 3 כדי לסגור את הפער', levelFor(stx, 'sq-sum') === 3);
-stx.skills['sq-sum'].maxCorrectLevel = 3;
-ok('אחרי תשובה נכונה ברמה 3 — נשלט', isMastered(stx, 'sq-sum'));
+ok(`p גבוה בלי ראיה ברמה ${MASTERY_TOP_LEVEL} אינו שליטה`, !isMastered(stx, 'sq-sum'));
+ok('...והמנוע מגיש את הרמה הבאה בסולם כדי לסגור את הפער', levelFor(stx, 'sq-sum') === 3);
+stx.skills['sq-sum'].maxCorrectLevel = MASTERY_TOP_LEVEL;
+ok('אחרי תשובה נכונה ברמה הגבוהה — נשלט', isMastered(stx, 'sq-sum'));
 
 // הסולם: כל הרמות מוגשות בפועל, אחת אחרי השנייה, בלי דילוג
 const reachable = [];
 let probe = emptyState();
-for (let i = 0; i < 6; i++) {
+for (let i = 0; i < MASTERY_TOP_LEVEL + 2; i++) {
   const lvl = levelFor(probe, 'monomial-mult');
   reachable.push(lvl);
   probe.skills['monomial-mult'] = updateSkill(probe.skills['monomial-mult'], true, lvl);
 }
-ok('הסולם עולה 1 → 2 → 3 בלי לדלג',
-  reachable.slice(0, 3).join(',') === '1,2,3', `רמות: ${reachable.join(',')}`);
+ok(`הסולם עולה 1 → … → ${MASTERY_TOP_LEVEL} בלי לדלג`,
+  reachable.slice(0, MASTERY_TOP_LEVEL).join(',') === [1, 2, 3, 4, 5].slice(0, MASTERY_TOP_LEVEL).join(','),
+  `רמות: ${reachable.join(',')}`);
 ok('אין קפיצה של יותר מרמה אחת בכל צעד',
   reachable.every((l, i) => i === 0 || l - reachable[i - 1] <= 1), `רמות: ${reachable.join(',')}`);
+ok('כל הרמות נגישות בפועל', new Set(reachable).size === MASTERY_TOP_LEVEL,
+  `רמות: ${reachable.join(',')}`);
 
 // כישלון ברמה מסוימת לא מקדם הלאה
 const stuck = emptyState();

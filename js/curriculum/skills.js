@@ -49,6 +49,20 @@ export const SKILLS = [
     stage: 'נוסחאות הכפל המקוצר',
   },
   {
+    id: 'mental-mult',
+    title: 'חישוב בראש',
+    short: '104 · 96 = 10000 − 16',
+    prereqs: ['diff-squares-expand'],
+    stage: 'נוסחאות הכפל המקוצר',
+  },
+  {
+    id: 'complete-identity',
+    title: 'השלמת זהות',
+    short: 'הכיוון ההפוך: ( ? + 3)² = x² + 6x + 9',
+    prereqs: ['sq-sum', 'sq-diff', 'diff-squares-expand'],
+    stage: 'נוסחאות הכפל המקוצר',
+  },
+  {
     id: 'factor-common',
     title: 'הוצאת גורם משותף',
     short: '6x² + 3x = 3x(2x + 1)',
@@ -95,6 +109,20 @@ export const SKILLS = [
     title: 'פתרון משוואות בעזרת פירוק',
     short: 'מכפלה שווה לאפס',
     prereqs: ['factor-combined'],
+    stage: 'שילוב ויישום',
+  },
+  {
+    id: 'shortcut-equations',
+    title: 'משוואות עם כפל מקוצר',
+    short: 'איבר ה-x² מצטמצם ונשארת משוואה פשוטה',
+    prereqs: ['complete-identity'],
+    stage: 'שילוב ויישום',
+  },
+  {
+    id: 'symmetric-values',
+    title: 'זהויות סימטריות',
+    short: 'נתון a²+b² ו-ab — חשבו (a+b)²',
+    prereqs: ['complete-identity'],
     stage: 'שילוב ויישום',
   },
 ];

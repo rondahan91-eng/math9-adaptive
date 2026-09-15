@@ -5,7 +5,7 @@
 // משווים - זו התאמה מדויקת, לא ניחוש הסתברותי. אם אין התאמה, מחזירים null
 // והמשוב יהיה כללי (ולא ניחוש שגוי, שגרוע יותר מכלום).
 
-import { pEqual, ratFunc, pOne, rfEqual } from '../math/poly.js';
+import { ratFunc, pOne, rfEqual } from '../math/poly.js';
 
 function sameRootSet(a, b) {
   if (!a || !b || a.length !== b.length) return false;
@@ -32,11 +32,19 @@ export function diagnose(exercise, result) {
   }
 
   if (result.reason !== 'value' || !result.value) return null;
+
+  // ברמות הגבוהות יש תרגילים עם 1/x, ושם התשובה אינה פולינום אלא מנה של
+  // שניים. לכן ההשוואה נעשית תמיד במישור הפונקציות הרציונליות.
+  const targetRf = exercise.target?.den
+    ? exercise.target
+    : (exercise.target?.terms ? ratFunc(exercise.target, pOne()) : null);
+
   for (const w of exercise.wrongs) {
-    if (!w.poly) continue;
+    const rf = w.rf || (w.poly ? ratFunc(w.poly, pOne()) : null);
+    if (!rf) continue;
     // הגנה: אם הגנרטור יצר "תשובה שגויה" שבמקרה שווה לנכונה - מתעלמים ממנה
-    if (exercise.target?.terms && pEqual(w.poly, exercise.target)) continue;
-    if (rfEqual(result.value, ratFunc(w.poly, pOne()))) return w.id;
+    if (targetRf && rfEqual(rf, targetRf)) continue;
+    if (rfEqual(result.value, rf)) return w.id;
   }
   return null;
 }

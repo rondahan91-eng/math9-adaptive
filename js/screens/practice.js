@@ -86,7 +86,7 @@ export function renderPractice(root, ctx, params = {}) {
           <button class="ghost small" data-lesson>הסבר על הנושא</button>
         </div>
 
-        <p style="margin:.6rem 0 0">${escapeHtml(ex.prompt)}</p>
+        <p style="margin:.6rem 0 0">${renderInline(ex.prompt)}</p>
         <span class="exercise-expr">${renderExpr(ex.exprText)}</span>
 
         <form id="answer-form" class="stack">
@@ -209,6 +209,17 @@ export function renderPractice(root, ctx, params = {}) {
     paint(card.querySelector('#feedback')?.innerHTML || '');
   }
 
+  /**
+   * ההצגה של הפתרון. ברוב התרגילים "השאלה = התשובה" הוא בדיוק מה שצריך,
+   * אבל בחישוב בראש ובזהויות סימטריות זה מטעה: שם השורה המלמדת היא דרך
+   * החישוב עצמה, ולכן הגנרטור יכול לספק solutionText משלו.
+   */
+  function solutionLine() {
+    return ex.solutionText
+      ? renderExpr(ex.solutionText)
+      : `${renderExpr(ex.exprText)} = ${renderExpr(ex.answerText)}`;
+  }
+
   // -------------------------------------------------------------- בדיקה
   function submit(text) {
     if (settled) return;
@@ -255,7 +266,7 @@ export function renderPractice(root, ctx, params = {}) {
       const mastered = isMastered(ctx.state, ex.skillId);
       paint(`<div class="feedback ok">
         <strong>${attempts === 1 ? 'נכון!' : 'נכון — כל הכבוד על ההתמדה'}</strong>
-        ${renderExpr(ex.exprText)} = ${renderExpr(ex.answerText)}
+        ${solutionLine()}
         ${mastered ? '<br><span class="badge ok">המיומנות הזו נשלטת</span>' : ''}
       </div>`);
       return;
@@ -279,7 +290,7 @@ export function renderPractice(root, ctx, params = {}) {
     }
     paint(`<div class="feedback warn">
       <strong>הפתרון</strong>
-      ${renderExpr(ex.exprText)} = ${renderExpr(ex.answerText)}
+      ${solutionLine()}
       <br><span class="muted">${renderInline(ex.rule || '')}</span>
     </div>`);
   }
