@@ -181,14 +181,20 @@ export function levelFor(state, skillId) {
 }
 
 /**
- * אחוז התקדמות כללי - לתצוגה בלבד. מיומנות שאינה נשלטת לא תורמת יותר מ-0.9,
- * כדי שהמחוון לא יראה 100% בזמן ששום מיומנות לא נסגרה באמת.
+ * אחוז התקדמות כללי - לתצוגה בלבד. שני כללים:
+ *   1. מיומנות שאינה נשלטת לא תורמת יותר מ-0.9, כדי שהמחוון לא יראה 100%
+ *      בזמן ששום מיומנות לא נסגרה באמת.
+ *   2. מיומנות בלי אף ניסיון תורמת 0 - גם אם p שלה הוא pInit. ה-BKT מתחיל
+ *      מהסתברות פריורית שהיא *אמונה* על תלמיד שטרם נצפה, לא ראיה שהוא עשה
+ *      משהו. בלי הכלל הזה מי שרק נכנס למערכת רואה "התקדמות 22%", המחוון
+ *      לעולם לא מתחיל מאפס, ובלוח המורה כל תלמיד רשום נראה כאילו התחיל.
  */
 export function overallProgress(state) {
-  const values = SKILLS.map(s => (
-    isMastered(state, s.id)
-      ? 1
-      : Math.min(0.9, (state.skills[s.id]?.p ?? 0) / MASTERY_THRESHOLD)
-  ));
+  const values = SKILLS.map(s => {
+    if (isMastered(state, s.id)) return 1;
+    const skill = state.skills[s.id];
+    if (!skill?.attempts) return 0;
+    return Math.min(0.9, skill.p / MASTERY_THRESHOLD);
+  });
   return values.reduce((a, b) => a + b, 0) / SKILLS.length;
 }

@@ -30,7 +30,7 @@ export function renderLesson(root, ctx, params) {
         </div>
         ${isMastered(ctx.state, skill.id) ? '<span class="badge ok">נשלט</span>' : ''}
       </div>
-      ${progressBar(s.p / MASTERY_THRESHOLD, isMastered(ctx.state, skill.id))}
+      ${progressBar(s.attempts ? s.p / MASTERY_THRESHOLD : 0, isMastered(ctx.state, skill.id))}
       ${lesson ? `<p style="margin-top:.9rem;margin-bottom:0">${escapeHtml(lesson.intro)}</p>` : ''}
     </div>
 

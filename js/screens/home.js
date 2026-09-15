@@ -93,7 +93,7 @@ function skillCard(state, skill) {
     <button class="skill-card ${cls}" data-skill="${escapeHtml(skill.id)}">
       <div class="title">${escapeHtml(skill.title)} ${mastered ? '<span class="badge ok">נשלט</span>' : ''}</div>
       <div class="sub">${escapeHtml(skill.short)}</div>
-      ${progressBar(s.p / MASTERY_THRESHOLD, mastered)}
+      ${progressBar(s.attempts ? s.p / MASTERY_THRESHOLD : 0, mastered)}
       ${!unlocked && missing.length ? `<div class="lock-note">נפתח אחרי: ${
         missing.map(id => escapeHtml(SKILL_BY_ID[id].title)).join(', ')}</div>` : ''}
       ${unlocked && s.attempts ? `<div class="sub" style="margin-top:.3rem">${s.correct}/${s.attempts} נכונות</div>` : ''}
