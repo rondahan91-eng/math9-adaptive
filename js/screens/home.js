@@ -5,7 +5,8 @@
 // "נעול" בלי סיבה מרגיש שהמערכת שרירותית; תלמיד שרואה "צריך קודם לשלוט
 // בחוק הפילוג" מבין את המבנה של החומר.
 
-import { SKILLS, SKILL_BY_ID, STAGES } from '../curriculum/skills.js';
+import { SKILLS, SKILL_BY_ID } from '../curriculum/skills.js';
+import { revealedStages, isSkillRevealed } from '../learn/reveals.js';
 import {
   isMastered, isUnlocked, overallProgress, MASTERY_THRESHOLD,
   activeMisconceptions, selectNextSkill,
@@ -33,7 +34,7 @@ export function renderHome(root, ctx) {
           <h1>שלום, ${escapeHtml(ctx.user.displayName || '')}</h1>
           <p class="muted" style="margin:0">התקדמות ביחידה: ${fmtPercent(overallProgress(state))}</p>
         </div>
-        <button class="primary" data-practice>המשך לתרגל</button>
+        <button class="primary" data-practice ${nextSkill ? '' : 'disabled'}>המשך לתרגל</button>
       </div>
       ${progressBar(overallProgress(state))}
       ${tutorMisconfigured(ctx) ? `<p class="muted" style="margin-top:.5rem;margin-bottom:0">
@@ -41,11 +42,13 @@ export function renderHome(root, ctx) {
         ${escapeHtml(ctx.tutor.reason || '')}
       </p>` : ''}
       <p class="muted" style="margin-top:.8rem;margin-bottom:0">
-        ${next.reason === 'remediation'
-          ? `הצעד הבא: חזרה על <strong>${escapeHtml(nextSkill.title)}</strong> — יש שם נקודה שכדאי לסגור.`
-          : next.reason === 'review'
-            ? `שלטת בכל היחידה. הצעד הבא הוא חזרה על <strong>${escapeHtml(nextSkill.title)}</strong>.`
-            : `הצעד הבא: <strong>${escapeHtml(nextSkill.title)}</strong>`}
+        ${!nextSkill
+          ? 'אין כרגע חומר פתוח לתרגול.'
+          : next.reason === 'remediation'
+            ? `הצעד הבא: חזרה על <strong>${escapeHtml(nextSkill.title)}</strong> — יש שם נקודה שכדאי לסגור.`
+            : next.reason === 'review'
+              ? `שלטת בכל מה שנפתח עד כה. הצעד הבא הוא חזרה על <strong>${escapeHtml(nextSkill.title)}</strong>.`
+              : `הצעד הבא: <strong>${escapeHtml(nextSkill.title)}</strong>`}
       </p>
     </div>
 
@@ -68,15 +71,19 @@ export function renderHome(root, ctx) {
 
   root.querySelector('[data-practice]').addEventListener('click', () => ctx.navigate('practice'));
 
+  // שלב שלא נחשף אינו מוצג כלל - לא כ"נעול". תלמיד/ה לא אמור/ה לדעת שיש
+  // שם חומר עד שהמורה תפתח אותו.
   const map = root.querySelector('#map');
-  map.innerHTML = STAGES.map(stage => {
+  map.innerHTML = revealedStages().map(stage => {
     const inStage = SKILLS.filter(s => s.stage === stage);
     return `
       <div class="stage-title">${escapeHtml(stage)}</div>
       <div class="skill-grid">
         ${inStage.map(s => skillCard(state, s)).join('')}
       </div>`;
-  }).join('');
+  }).join('') || `<div class="card"><p class="muted" style="margin:0">
+      המורה עדיין לא פתחה חומר לתרגול. ברגע שזה יקרה, הנושאים יופיעו כאן.
+    </p></div>`;
 
   map.querySelectorAll('[data-skill]').forEach(btn => {
     btn.addEventListener('click', () => ctx.navigate('lesson', { skillId: btn.dataset.skill }));
@@ -94,8 +101,13 @@ function skillCard(state, skill) {
       <div class="title">${escapeHtml(skill.title)} ${mastered ? '<span class="badge ok">נשלט</span>' : ''}</div>
       <div class="sub">${escapeHtml(skill.short)}</div>
       ${progressBar(s.attempts ? s.p / MASTERY_THRESHOLD : 0, mastered)}
-      ${!unlocked && missing.length ? `<div class="lock-note">נפתח אחרי: ${
-        missing.map(id => escapeHtml(SKILL_BY_ID[id].title)).join(', ')}</div>` : ''}
+      ${!unlocked && missing.length ? `<div class="lock-note">${
+        // קדם-דרישה שנמצאת בשלב שלא נחשף - אין טעם לנקוב בשמה, היא לא מופיעה
+        // בשום מקום במפה ורק תיראה כמו הוראה בלתי אפשרית
+        missing.some(id => !isSkillRevealed(id))
+          ? 'נפתח אחרי חומר שהמורה עדיין לא פתחה'
+          : `נפתח אחרי: ${missing.map(id => escapeHtml(SKILL_BY_ID[id].title)).join(', ')}`
+      }</div>` : ''}
       ${unlocked && s.attempts ? `<div class="sub" style="margin-top:.3rem">${s.correct}/${s.attempts} נכונות</div>` : ''}
     </button>`;
 }

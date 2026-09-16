@@ -11,7 +11,9 @@ import { renderHome } from './screens/home.js';
 import { renderLesson } from './screens/lesson.js';
 import { renderPractice } from './screens/practice.js';
 import { renderDashboard } from './screens/dashboard.js';
+import { renderContent } from './screens/content.js';
 import { tutorAvailable, resetTutorStatus, loadQuota } from './tutor.js';
+import { setReveals, resetReveals } from './learn/reveals.js';
 
 const root = document.getElementById('app');
 const header = document.getElementById('app-header');
@@ -31,6 +33,7 @@ const SCREENS = {
   lesson: renderLesson,
   practice: renderPractice,
   dashboard: renderDashboard,
+  content: renderContent,
 };
 
 let current = { name: 'home', params: {} };
@@ -56,7 +59,7 @@ function render() {
 function renderNav() {
   const isTeacher = ctx.user.role === 'admin';
   const items = isTeacher
-    ? [['dashboard', 'מעקב כיתה'], ['home', 'מפת היחידה']]
+    ? [['dashboard', 'מעקב כיתה'], ['content', 'תוכן וחשיפה'], ['home', 'מפת היחידה']]
     : [['home', 'מפת היחידה'], ['practice', 'תרגול']];
   nav.innerHTML = items
     .map(([id, label]) => `<button class="small${current.name === id ? ' primary' : ''}" data-go="${id}">${label}</button>`)
@@ -70,6 +73,7 @@ function renderNav() {
 async function onLogin(user) {
   ctx.user = user;
   localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(user));
+  await loadReveals();
   await loadProgress();
   resetTutorStatus();
   ctx.tutor = await tutorAvailable();
@@ -81,7 +85,27 @@ function logout() {
   localStorage.removeItem(CONFIG.SESSION_KEY);
   ctx.user = null;
   ctx.state = emptyState();
+  resetReveals();
   render();
+}
+
+/**
+ * מצב החשיפה נטען לפני ההתקדמות, כי הוא קובע מה בכלל נספר. כישלון רשת אינו
+ * מרוקן את המפה: reveals.js נופל לקאש המקומי, ורק אם גם הוא ריק - לברירת
+ * המחדל. עדיף שתלמיד/ה יראה/תראה רגע תוכן ישן מאשר מסך ריק בלי הסבר.
+ */
+async function loadReveals() {
+  try {
+    setReveals(await api.fetchReveals());
+  } catch (err) {
+    // שרת שעדיין לא עודכן אינו תקלה שצריך להטריד בה תלמיד/ה - הוא פשוט
+    // לא מכיר את הפעולה, והלקוח ממשיך עם ברירת המחדל. כל שגיאה אחרת כן
+    // ראויה להודעה, כי היא עלולה להסתיר תוכן שהמורה פתחה.
+    const oldBackend = /פעולה לא מוכרת/.test(err?.message || '');
+    if (!isDevMode() && !oldBackend) {
+      toast('לא הצלחתי לבדוק מה פתוח — מציג את מה שהיה', 'err');
+    }
+  }
 }
 
 async function loadProgress() {
@@ -116,6 +140,7 @@ function saveProgress() {
     const saved = JSON.parse(localStorage.getItem(CONFIG.SESSION_KEY));
     if (saved && saved.studentId) {
       ctx.user = saved;
+      await loadReveals();
       await loadProgress();
       ctx.tutor = await tutorAvailable();
       if (ctx.tutor.available && saved.role !== 'admin') await loadQuota(saved.studentId);

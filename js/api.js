@@ -5,6 +5,7 @@
 // מול Google Apps Script.
 
 import { CONFIG, isDevMode } from './config.js';
+import { STAGES, STAGES_REVEALED_BY_DEFAULT } from './curriculum/skills.js';
 
 async function call(action, payload = {}) {
   if (isDevMode()) return devCall(action, payload);
@@ -30,6 +31,7 @@ const LS = {
 
 const DEV_USERS_KEY = 'math9-dev-users';
 const DEV_PROGRESS_KEY = 'math9-dev-progress';
+const DEV_REVEALS_KEY = 'math9-dev-reveals';
 
 function devUsers() {
   return LS.read(DEV_USERS_KEY, [
@@ -91,6 +93,22 @@ async function devCall(action, payload) {
       return all[payload.studentId]?.state || null;
     }
 
+    case 'fetchReveals': {
+      const saved = LS.read(DEV_REVEALS_KEY, null);
+      return STAGES.map(stage => ({
+        stage,
+        revealed: saved ? saved[stage] === true : STAGES_REVEALED_BY_DEFAULT.includes(stage),
+      }));
+    }
+
+    case 'setReveal': {
+      const saved = LS.read(DEV_REVEALS_KEY, null) || Object.fromEntries(
+        STAGES.map(s => [s, STAGES_REVEALED_BY_DEFAULT.includes(s)]));
+      saved[payload.stage] = !!payload.revealed;
+      LS.write(DEV_REVEALS_KEY, saved);
+      return STAGES.map(stage => ({ stage, revealed: saved[stage] === true }));
+    }
+
     case 'fetchClassProgress': {
       const all = LS.read(DEV_PROGRESS_KEY, {});
       return devUsers().filter(u => u.role === 'student').map(u => ({
@@ -115,6 +133,8 @@ export const api = {
   saveProgress: (studentId, state) => call('saveProgress', { studentId, state }),
   fetchMyProgress: (studentId) => call('fetchMyProgress', { studentId }),
   fetchClassProgress: () => call('fetchClassProgress', {}),
+  fetchReveals: () => call('fetchReveals', {}),
+  setReveal: (stage, revealed, token) => call('setReveal', { stage, revealed, token }),
   tutorStatus: () => call('tutorStatus', {}),
   tutorQuota: (studentId) => call('tutorQuota', { studentId }),
   tutorHint: (context) => call('tutorHint', context),

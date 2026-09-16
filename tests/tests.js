@@ -14,7 +14,8 @@ import { factorPoly, isFullyReduced } from '../js/math/factor.js';
 import { checkAnswer, checkRoots, isExpandedForm } from '../js/math/check.js';
 import { GENERATORS, generateExercise } from '../js/curriculum/generators.js';
 import { MISCONCEPTIONS } from '../js/curriculum/misconceptions.js';
-import { SKILLS, topoOrder } from '../js/curriculum/skills.js';
+import { SKILLS, topoOrder, STAGES, STAGES_REVEALED_BY_DEFAULT } from '../js/curriculum/skills.js';
+import { setReveals, resetReveals, revealedStages, isSkillRevealed } from '../js/learn/reveals.js';
 import { renderExpr, renderInline } from '../js/math/render.js';
 import { checkClaim, renderVerified, failureNote } from '../js/math/verify.js';
 import { CONFIG } from '../js/config.js';
@@ -439,6 +440,49 @@ ok('מצב ישן שומר על הערכים שהיו', legacy.skills['monomial-
 ok('מצב ישן מקבל את כל המיומנויות', Object.keys(legacy.skills).length === SKILLS.length);
 
 ok('התקדמות לא מגיעה ל-100% בלי שליטה בפועל', overallProgress(stx) < 1);
+
+// -------------------------------------------------------------- חשיפת שלבים
+group('חשיפת שלבים ע"י המורה');
+resetReveals();
+ok('בלי החלטת מורה - שני השלבים הראשונים פתוחים',
+  revealedStages().join(' | ') === STAGES_REVEALED_BY_DEFAULT.join(' | '),
+  revealedStages().join(' | '));
+ok('...ולכן מיומנות בשלב הרביעי אינה גלויה', !isSkillRevealed('symmetric-values'));
+ok('...ומיומנות בשלב השני כן', isSkillRevealed('sq-sum'));
+
+const rv = emptyState();
+rv.skills['monomial-mult'] = { p: 0.99, attempts: 9, correct: 9, streak: 9, maxCorrectLevel: 5 };
+rv.skills['distribute-mono'] = { p: 0.99, attempts: 9, correct: 9, streak: 9, maxCorrectLevel: 5 };
+ok('מיומנות בשלב שנחשף ושקדם-הדרישות שלה נשלטות - פתוחה',
+  isUnlocked(rv, 'distribute-binom'));
+
+setReveals(STAGES.map(s => ({ stage: s, revealed: s !== 'יסודות' })));
+ok('הסתרת שלב מוציאה אותו מהמפה', !revealedStages().includes('יסודות'));
+ok('...והמיומנויות שבו אינן פתוחות יותר', !isUnlocked(rv, 'distribute-mono'));
+ok('...אבל ההתקדמות עצמה נשמרת במלואה',
+  rv.skills['distribute-mono'].p === 0.99 && rv.skills['distribute-mono'].attempts === 9);
+
+setReveals(STAGES.map(s => ({ stage: s, revealed: true })));
+ok('חשיפה מחדש מחזירה את המצב בדיוק כפי שהיה', isUnlocked(rv, 'distribute-mono'));
+
+// המכנה של אחוז ההתקדמות הוא רק מה שנחשף
+setReveals([{ stage: 'יסודות', revealed: true }]);
+const only = emptyState();
+for (const id of ['monomial-mult', 'distribute-mono', 'distribute-binom']) {
+  only.skills[id] = { p: 0.99, attempts: 9, correct: 9, streak: 9, maxCorrectLevel: MASTERY_TOP_LEVEL };
+}
+ok('שליטה בכל מה שנחשף = 100%, ולא שליש', overallProgress(only) === 1,
+  `${Math.round(overallProgress(only) * 100)}%`);
+
+setReveals(STAGES.map(s => ({ stage: s, revealed: false })));
+ok('כשאין שום שלב פתוח אין מה להגיש', selectNextSkill(emptyState()).skillId === null);
+ok('...והתקדמות היא 0 ולא NaN', overallProgress(emptyState()) === 0);
+
+setReveals([{ stage: 'פירוק לגורמים', revealed: true }]);
+ok('שלב שנחשף בלי הבסיס שלו - גלוי אבל נעול',
+  isSkillRevealed('factor-common') && !isUnlocked(emptyState(), 'factor-common'));
+
+resetReveals();
 
 // -------------------------------------------------------------- דוח
 export function runAndReport(root) {

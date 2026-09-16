@@ -17,6 +17,7 @@ import {
   selectNextSkill, levelFor, updateSkill, recordMisconception,
   decayMisconceptions, isMastered,
 } from '../learn/mastery.js';
+import { isSkillRevealed } from '../learn/reveals.js';
 import { CONFIG } from '../config.js';
 import { escapeHtml, symbolBar, wireSymbolBar, progressBar } from '../ui.js';
 import { askTutor } from '../tutor.js';
@@ -53,9 +54,11 @@ export function renderPractice(root, ctx, params = {}) {
 
   // -------------------------------------------------------------- זרימה
   function nextExercise() {
-    const choice = round.forcedSkill
+    const choice = round.forcedSkill && isSkillRevealed(round.forcedSkill)
       ? { skillId: round.forcedSkill, reason: 'chosen' }
       : selectNextSkill(ctx.state);
+    // המורה יכולה להסתיר שלב באמצע סבב, והמיומנות שנבחרה עלולה להיעלם
+    if (!choice.skillId) return nothingOpen();
     const level = levelFor(ctx.state, choice.skillId);
     const seed = (Date.now() ^ (round.done * 2654435761)) >>> 0;
     ex = { ...generateExercise(choice.skillId, level, seed), reason: choice.reason };
@@ -299,6 +302,17 @@ export function renderPractice(root, ctx, params = {}) {
     round.done++;
     if (round.done >= CONFIG.EXERCISES_PER_ROUND) return finishRound();
     nextExercise();
+  }
+
+  function nothingOpen() {
+    card.innerHTML = `
+      <div class="card">
+        <h1>אין כרגע חומר פתוח</h1>
+        <p class="muted">המורה עדיין לא פתחה נושאים לתרגול, או שהנושא שתרגלת הוסתר.
+        ההתקדמות שלך נשמרה במלואה.</p>
+        <button class="primary" data-home>חזרה למפה</button>
+      </div>`;
+    card.querySelector('[data-home]').addEventListener('click', () => ctx.navigate('home'));
   }
 
   function finishRound() {

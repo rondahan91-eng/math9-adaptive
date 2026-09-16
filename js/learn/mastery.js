@@ -7,6 +7,7 @@
 // לא קופצת ל-100%, ותשובה שגויה אחת אחרי שליטה לא מאפסת הכל.
 
 import { SKILLS, SKILL_BY_ID, topoOrder } from '../curriculum/skills.js';
+import { isStageRevealed } from './reveals.js';
 
 export const BKT = {
   pInit: 0.20,   // הסתברות ראשונית לשליטה
@@ -92,10 +93,23 @@ export function isMastered(state, skillId) {
     && (s.maxCorrectLevel || 0) >= MASTERY_TOP_LEVEL;
 }
 
+/**
+ * שני תנאים, ושניהם חייבים להתקיים:
+ *   1. המורה חשפה את השלב שבו המיומנות נמצאת
+ *   2. כל קדם-הדרישות נשלטות מספיק
+ * התנאי השני חל גם על קדם-דרישות שנמצאות בשלב אחר - כולל שלב מוסתר. לכן
+ * חשיפת שלב שהבסיס שלו מוסתר תשאיר אותו נעול, ומסך התוכן מזהיר על כך.
+ */
 export function isUnlocked(state, skillId) {
   const skill = SKILL_BY_ID[skillId];
   if (!skill) return false;
+  if (!isStageRevealed(skill.stage)) return false;
   return skill.prereqs.every(p => (state.skills[p]?.p ?? 0) >= PREREQ_THRESHOLD);
+}
+
+/** כל המיומנויות שהמורה חשפה - בלי קשר לשאלה אם הן נעולות. */
+export function visibleSkills() {
+  return SKILLS.filter(s => isStageRevealed(s.stage)).map(s => s.id);
 }
 
 export function unlockedSkills(state) {
@@ -141,7 +155,11 @@ const order = topoOrder();
  */
 export function selectNextSkill(state) {
   const unlocked = unlockedSkills(state);
-  if (unlocked.length === 0) return { skillId: order[0], reason: 'start' };
+  if (unlocked.length === 0) {
+    // אין מה להגיש: או שהשלב הראשון עדיין נעול, או שהמורה לא חשפה כלום
+    const visible = visibleSkills();
+    return { skillId: order.find(id => visible.includes(id)) || null, reason: 'start' };
+  }
 
   const active = activeMisconceptions(state);
   for (const m of active) {
@@ -192,13 +210,17 @@ export function levelFor(state, skillId) {
  *      מהסתברות פריורית שהיא *אמונה* על תלמיד שטרם נצפה, לא ראיה שהוא עשה
  *      משהו. בלי הכלל הזה מי שרק נכנס למערכת רואה "התקדמות 22%", המחוון
  *      לעולם לא מתחיל מאפס, ובלוח המורה כל תלמיד רשום נראה כאילו התחיל.
+ *   3. המכנה הוא רק מה שנחשף. אחרת תלמיד/ה שסיים/ה את כל מה שנפתח לו/ה
+ *      היה רואה 30%, ו"סיימתי" היה נראה כמו כישלון.
  */
 export function overallProgress(state) {
-  const values = SKILLS.map(s => {
-    if (isMastered(state, s.id)) return 1;
-    const skill = state.skills[s.id];
+  const visible = visibleSkills();
+  if (visible.length === 0) return 0;
+  const values = visible.map(id => {
+    if (isMastered(state, id)) return 1;
+    const skill = state.skills[id];
     if (!skill?.attempts) return 0;
     return Math.min(0.9, skill.p / MASTERY_THRESHOLD);
   });
-  return values.reduce((a, b) => a + b, 0) / SKILLS.length;
+  return values.reduce((a, b) => a + b, 0) / visible.length;
 }

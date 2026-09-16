@@ -131,6 +131,16 @@ export const SKILL_BY_ID = Object.fromEntries(SKILLS.map(s => [s.id, s]));
 
 export const STAGES = ['יסודות', 'נוסחאות הכפל המקוצר', 'פירוק לגורמים', 'שילוב ויישום'];
 
+/**
+ * מה חשוף כשאין עדיין החלטה שמורה של המורה. שני השלבים הראשונים - בדיוק
+ * הפרק שהכיתה לומדת עכשיו. חייב להישאר זהה ל-STAGES_REVEALED_BY_DEFAULT
+ * ב-backend/Code.gs, אחרת מצב פיתוח והשרת יראו שונה.
+ */
+export const STAGES_REVEALED_BY_DEFAULT = ['יסודות', 'נוסחאות הכפל המקוצר'];
+
+/** השלב שבו נמצאת מיומנות. */
+export const stageOf = (skillId) => SKILL_BY_ID[skillId]?.stage || null;
+
 /** כל המיומנויות שתלויות (ישירות) במיומנות נתונה. */
 export function dependentsOf(skillId) {
   return SKILLS.filter(s => s.prereqs.includes(skillId)).map(s => s.id);

@@ -15,6 +15,16 @@
 var SHEET_USERS = 'Users';
 var SHEET_PROGRESS = 'Progress';
 var SHEET_TUTOR = 'TutorUsage';
+var SHEET_REVEALS = 'Reveals';
+
+// שלבי הספר, בסדר הלימוד. חייב להיות זהה ל-STAGES ב-js/curriculum/skills.js.
+var STAGES = ['יסודות', 'נוסחאות הכפל המקוצר', 'פירוק לגורמים', 'שילוב ויישום'];
+
+// מה חשוף כשהגיליון נוצר: שני השלבים הראשונים - בדיוק הפרק שהכיתה לומדת.
+var STAGES_REVEALED_BY_DEFAULT = ['יסודות', 'נוסחאות הכפל המקוצר'];
+
+var ADMIN_TOKEN_PROPERTY = 'ADMIN_TOKEN';
+var ADMIN_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;   // 12 שעות
 
 // המכסה היומית מוגדרת **כאן ולא בלקוח**. הלקוח מציג את מה שהשרת מחזיר,
 // ולא סופר בעצמו - אחרת ניקוי localStorage היה מאפס את המגבלה.
@@ -121,6 +131,8 @@ function routeAction(action, p) {
     case 'saveProgress': return saveProgress(p.studentId, p.state);
     case 'fetchMyProgress': return fetchMyProgress(p.studentId);
     case 'fetchClassProgress': return fetchClassProgress();
+    case 'fetchReveals': return fetchReveals();
+    case 'setReveal': return setReveal(p.stage, p.revealed, p.token);
     case 'tutorStatus': return tutorStatus();
     case 'tutorQuota': return tutorQuota(p.studentId);
     case 'tutorHint': return tutorHint(p);
@@ -146,6 +158,12 @@ function createSheet(ss, name) {
     sheet.appendRow(['studentId', 'stateJson', 'updatedAt']);
   } else if (name === SHEET_TUTOR) {
     sheet.appendRow(['studentId', 'date', 'count', 'lastQuestionId', 'retryUsed', 'updatedAt']);
+  } else if (name === SHEET_REVEALS) {
+    sheet.appendRow(['stage', 'revealed', 'updatedAt', 'updatedBy']);
+    for (var i = 0; i < STAGES.length; i++) {
+      var on = STAGES_REVEALED_BY_DEFAULT.indexOf(STAGES[i]) !== -1;
+      sheet.appendRow([STAGES[i], on, new Date(), 'ברירת מחדל']);
+    }
   }
   sheet.setFrozenRows(1);
   return sheet;
@@ -177,12 +195,82 @@ function authenticateUser(username, password) {
     var u = users[i];
     if (String(u.username).toLowerCase() !== String(username).trim().toLowerCase()) continue;
     if (sha256(password) !== u.passHash) throw new Error('שם משתמש או סיסמה שגויים');
-    return {
+    var out = {
       studentId: u.studentId, username: u.username, role: u.role,
       displayName: u.displayName, grade: u.grade || '',
     };
+    // רק למורה יש אסימון, ורק הוא נדרש לפעולות שמשנות מה התלמידים רואים
+    if (u.role === 'admin') out.token = mintAdminToken(out);
+    return out;
   }
   throw new Error('שם משתמש או סיסמה שגויים');
+}
+
+// -------------------------------------------------------------- חשיפת שלבים
+// שתי שכבות שליטה נפרדות במה שתלמיד/ה רואה:
+//   1. חשיפה - החלטה של המורה, ברמת שלב. נשמרת כאן.
+//   2. קדם-דרישות - אוטומטי, לפי שליטה. נשאר בצד הלקוח ואינו ניתן לעקיפה.
+// הסתרה לעולם אינה מוחקת התקדמות: היא רק מעלימה שלב מהמפה, וחשיפה מחדש
+// מחזירה את המצב כפי שהיה.
+
+function fetchReveals() {
+  var rows = sheetToObjects(getSheet(SHEET_REVEALS));
+  var byStage = {};
+  for (var i = 0; i < rows.length; i++) {
+    byStage[String(rows[i].stage)] = isTrue(rows[i].revealed);
+  }
+  // שלב שאינו מופיע בגיליון נחשב מוסתר, כדי שתוכן חדש לא ייחשף מעצמו
+  var out = [];
+  for (var j = 0; j < STAGES.length; j++) {
+    out.push({ stage: STAGES[j], revealed: byStage[STAGES[j]] === true });
+  }
+  return out;
+}
+
+function setReveal(stage, revealed, token) {
+  var admin = requireAdmin(token);
+  if (STAGES.indexOf(stage) === -1) throw new Error('שלב לא מוכר: ' + stage);
+  var sheet = getSheet(SHEET_REVEALS);
+  var values = sheet.getDataRange().getValues();
+  var want = !!revealed;
+  for (var r = 1; r < values.length; r++) {
+    if (String(values[r][0]) !== String(stage)) continue;
+    sheet.getRange(r + 1, 2, 1, 3).setValues([[want, new Date(), admin.displayName || admin.studentId]]);
+    return fetchReveals();
+  }
+  sheet.appendRow([stage, want, new Date(), admin.displayName || admin.studentId]);
+  return fetchReveals();
+}
+
+/** גיליון Google מחזיר לפעמים בוליאני ולפעמים את המחרוזת "TRUE". */
+function isTrue(v) {
+  if (v === true) return true;
+  return String(v).trim().toLowerCase() === 'true';
+}
+
+// -------------------------------------------------------------- הרשאת מורה
+// בלי זה "בדיקת אדמין" הייתה תיאטרון: הלקוח שולח studentId, וכל תלמיד/ה
+// שפותח/ת את קוד המקור יכול/ה לשלוח 'admin'. אסימון שנוצר רק בהתחברות
+// מוצלחת הוא הדבר היחיד שהלקוח אינו יכול להמציא.
+function mintAdminToken(user) {
+  var token = Utilities.getUuid();
+  PropertiesService.getScriptProperties().setProperty(ADMIN_TOKEN_PROPERTY, JSON.stringify({
+    token: token, studentId: user.studentId, displayName: user.displayName, at: Date.now(),
+  }));
+  return token;
+}
+
+function requireAdmin(token) {
+  if (!token) throw new Error('הפעולה הזו דורשת התחברות כמורה');
+  var raw = PropertiesService.getScriptProperties().getProperty(ADMIN_TOKEN_PROPERTY);
+  if (!raw) throw new Error('פג תוקף ההתחברות. יש להתחבר מחדש');
+  var saved;
+  try { saved = JSON.parse(raw); } catch (e) { throw new Error('פג תוקף ההתחברות. יש להתחבר מחדש'); }
+  if (saved.token !== token) throw new Error('הפעולה הזו דורשת התחברות כמורה');
+  if (Date.now() - saved.at > ADMIN_TOKEN_TTL_MS) {
+    throw new Error('פג תוקף ההתחברות. יש להתחבר מחדש');
+  }
+  return saved;
 }
 
 function createNewStudent(username, password, displayName, grade) {
