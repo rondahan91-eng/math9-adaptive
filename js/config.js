@@ -6,7 +6,7 @@
 // בצד השרת (Script Properties ב-Google Apps Script) ולעולם לא מגיע לדפדפן.
 
 export const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycbyd8sUN3L1XaUPj0WkhzR0BQXcLveZwjie4uf-wPQVtclmmeuc-vqe70Lkdvjp0V0jI/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbyE5YA8g3KchOkJh6WlHpg2xL7fkVaEFO740NJyrZ0g2mdz9iISjHE7i6erK92eB0qLCQ/exec',
 
   // המורה הפרטי מכובה. יש לו *שני* מתגים בלתי תלויים, ושניהם חייבים להיות
   // דלוקים כדי שהוא יפעל:
