@@ -82,7 +82,7 @@ export function renderHome(root, ctx) {
         ${inStage.map(s => skillCard(state, s)).join('')}
       </div>`;
   }).join('') || `<div class="card"><p class="muted" style="margin:0">
-      המורה עדיין לא פתחה חומר לתרגול. ברגע שזה יקרה, הנושאים יופיעו כאן.
+      עדיין לא נפתח חומר לתרגול. ברגע שייפתח, הנושאים יופיעו כאן.
     </p></div>`;
 
   map.querySelectorAll('[data-skill]').forEach(btn => {
@@ -105,7 +105,7 @@ function skillCard(state, skill) {
         // קדם-דרישה שנמצאת בשלב שלא נחשף - אין טעם לנקוב בשמה, היא לא מופיעה
         // בשום מקום במפה ורק תיראה כמו הוראה בלתי אפשרית
         missing.some(id => !isSkillRevealed(id))
-          ? 'נפתח אחרי חומר שהמורה עדיין לא פתחה'
+          ? 'נפתח אחרי חומר שעדיין לא נפתח'
           : `נפתח אחרי: ${missing.map(id => escapeHtml(SKILL_BY_ID[id].title)).join(', ')}`
       }</div>` : ''}
       ${unlocked && s.attempts ? `<div class="sub" style="margin-top:.3rem">${s.correct}/${s.attempts} נכונות</div>` : ''}

@@ -214,7 +214,7 @@ export function renderPractice(root, ctx, params = {}) {
 
   /**
    * ההצגה של הפתרון. ברוב התרגילים "השאלה = התשובה" הוא בדיוק מה שצריך,
-   * אבל בחישוב בראש ובזהויות סימטריות זה מטעה: שם השורה המלמדת היא דרך
+   * אבל בזהויות סימטריות זה מטעה: שם השורה המלמדת היא דרך
    * החישוב עצמה, ולכן הגנרטור יכול לספק solutionText משלו.
    */
   function solutionLine() {
@@ -308,7 +308,7 @@ export function renderPractice(root, ctx, params = {}) {
     card.innerHTML = `
       <div class="card">
         <h1>אין כרגע חומר פתוח</h1>
-        <p class="muted">המורה עדיין לא פתחה נושאים לתרגול, או שהנושא שתרגלת הוסתר.
+        <p class="muted">עדיין לא נפתחו נושאים לתרגול, או שהנושא שתרגלת הוסתר.
         ההתקדמות שלך נשמרה במלואה.</p>
         <button class="primary" data-home>חזרה למפה</button>
       </div>`;

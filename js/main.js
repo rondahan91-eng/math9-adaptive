@@ -12,6 +12,7 @@ import { renderLesson } from './screens/lesson.js';
 import { renderPractice } from './screens/practice.js';
 import { renderDashboard } from './screens/dashboard.js';
 import { renderContent } from './screens/content.js';
+import { renderStudents } from './screens/students.js';
 import { tutorAvailable, resetTutorStatus, loadQuota } from './tutor.js';
 import { setReveals, resetReveals } from './learn/reveals.js';
 
@@ -34,6 +35,7 @@ const SCREENS = {
   practice: renderPractice,
   dashboard: renderDashboard,
   content: renderContent,
+  students: renderStudents,
 };
 
 let current = { name: 'home', params: {} };
@@ -59,7 +61,7 @@ function render() {
 function renderNav() {
   const isTeacher = ctx.user.role === 'admin';
   const items = isTeacher
-    ? [['dashboard', 'מעקב כיתה'], ['content', 'תוכן וחשיפה'], ['home', 'מפת היחידה']]
+    ? [['dashboard', 'מעקב כיתה'], ['students', 'תלמידים'], ['content', 'תוכן וחשיפה'], ['home', 'מפת היחידה']]
     : [['home', 'מפת היחידה'], ['practice', 'תרגול']];
   nav.innerHTML = items
     .map(([id, label]) => `<button class="small${current.name === id ? ' primary' : ''}" data-go="${id}">${label}</button>`)

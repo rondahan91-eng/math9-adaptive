@@ -16,6 +16,8 @@ import { GENERATORS, generateExercise } from '../js/curriculum/generators.js';
 import { MISCONCEPTIONS } from '../js/curriculum/misconceptions.js';
 import { SKILLS, topoOrder, STAGES, STAGES_REVEALED_BY_DEFAULT } from '../js/curriculum/skills.js';
 import { setReveals, resetReveals, revealedStages, isSkillRevealed } from '../js/learn/reveals.js';
+import { readSpreadsheet } from '../js/students/xlsx.js';
+import { buildImport, parseDob, normalizeGrade, credentialsCsv } from '../js/students/importRules.js';
 import { renderExpr, renderInline } from '../js/math/render.js';
 import { checkClaim, renderVerified, failureNote } from '../js/math/verify.js';
 import { CONFIG } from '../js/config.js';
@@ -483,6 +485,84 @@ ok('שלב שנחשף בלי הבסיס שלו - גלוי אבל נעול',
   isSkillRevealed('factor-common') && !isUnlocked(emptyState(), 'factor-common'));
 
 resetReveals();
+
+// -------------------------------------------------------------- ייבוא תלמידים
+group('ייבוא תלמידים מ-Excel');
+ok('תאריך טקסט DD/MM/YYYY', parseDob('07/03/2011') === '070311');
+ok('תאריך ISO', parseDob('2011-12-24') === '241211');
+ok('מספר סידורי של Excel', parseDob(40609) === '070311', parseDob(40609));
+ok('מערכת התאריכים של 1904', parseDob(39147, true) === '070311', parseDob(39147, true));
+ok('31/02 אינו תאריך', parseDob('31/02/2011') === null);
+ok('מספר קטן אינו תאריך', parseDob(12) === null);
+ok('כיתה עם גרש: ט\'1 → ט1', normalizeGrade("ט'1") === 'ט1');
+ok('כיתה עם רווח: ט\' 2 → ט2', normalizeGrade("ט' 2") === 'ט2');
+
+const fetchFile = async (name, type) => {
+  const res = await fetch(`./fixtures/${name}`);
+  return new File([await res.arrayBuffer()], name, { type });
+};
+
+const xlsxSheet = await readSpreadsheet(await fetchFile('students.xlsx'));
+ok('קובץ xlsx אמיתי נקרא', xlsxSheet.rows.length >= 10, `${xlsxSheet.rows.length} שורות`);
+ok('נקרא הגיליון הראשון לפי הסדר, לא האחרון שנוצר',
+  String(xlsxSheet.rows[0]?.[0] || '').startsWith('רשימת תלמידים'));
+
+const imp = buildImport(xlsxSheet, [{ username: 'demo', displayName: 'תלמיד/ה לדוגמה' }]);
+const byName = (list, n) => list.find(r => r.displayName === n);
+ok('שורת הכותרת נמצאה גם אחרי שורות פתיחה', imp.mode === 'derived' && !imp.error, imp.error || imp.mode);
+ok('נועה כהן: שם משתמש וסיסמה לפי הכלל',
+  byName(imp.valid, 'נועה כהן')?.username === 'נועה482' && byName(imp.valid, 'נועה כהן')?.password === '070311',
+  JSON.stringify(byName(imp.valid, 'נועה כהן')));
+ok('ת.ז שמתחילה ב-0 ותאריך כטקסט',
+  byName(imp.valid, 'איתי לוי')?.username === 'איתי671' && byName(imp.valid, 'איתי לוי')?.password === '151110',
+  JSON.stringify(byName(imp.valid, 'איתי לוי')));
+ok('אותו שם פרטי ואותן ספרות - מקבל סיומת',
+  byName(imp.valid, 'נועה מזרחי')?.username === 'נועה482_2', byName(imp.valid, 'נועה מזרחי')?.username);
+ok('הכיתה נשמרת עם המקבילה', byName(imp.valid, 'נועה מזרחי')?.grade === 'ט2');
+ok('שורה ריקה מדולגת בשקט', !imp.invalid.some(r => r.excelRow === 7));
+ok('חסר תאריך לידה - נדחה עם סיבה', /תאריך/.test(byName(imp.invalid, 'דניאל פרץ')?.reason || ''));
+ok('תלמיד שמופיע פעמיים - נדחה', /פעמיים/.test(imp.invalid.find(r => r.excelRow === 9)?.reason || ''),
+  JSON.stringify(imp.invalid));
+ok('תאריך שלא קיים - נדחה', !!byName(imp.invalid, 'יעל אברהם'));
+ok('שורה בלי שם - נדחית', imp.invalid.some(r => r.excelRow === 11), JSON.stringify(imp.invalid));
+ok('בדיוק שלושה נוצרים מהקובץ', imp.valid.length === 3, imp.valid.map(v => v.username).join(', '));
+ok('מספר ת.ז אינו נשלח הלאה', imp.valid.every(v => !('idNumber' in v)));
+
+// ייבוא חוזר של אותו קובץ אינו יוצר כפילויות
+const again = buildImport(xlsxSheet, imp.valid.map(v => ({ username: v.username, displayName: v.displayName })));
+ok('ייבוא חוזר - כולם מזוהים כקיימים', again.valid.length === 0 && again.existing.length === 3,
+  `חדשים ${again.valid.length}, קיימים ${again.existing.length}`);
+
+const csvSheet = await readSpreadsheet(await fetchFile('students-1255.csv', 'text/csv'));
+const csvImp = buildImport(csvSheet);
+ok('CSV בקידוד Windows-1255 נקרא כעברית', byName(csvImp.valid, 'רון דהן')?.username === 'רון987',
+  JSON.stringify(csvImp.valid[0] || csvImp.error));
+ok('פסיק בתוך מרכאות אינו מפצל עמודה', !!byName(csvImp.valid, 'שירה, מיכל גבאי'),
+  csvImp.valid.map(v => v.displayName).join(' | '));
+
+const creds = buildImport({ rows: [
+  ['שם מלא', 'כיתה', 'שם משתמש', 'סיסמה'],
+  ['רוני אלון', 'ט3', 'roni', 'abcd1'],
+  ['גיל בר', 'ט3', 'gil bar', 'x1234'],
+  ['מאיה', 'ט3', 'demo', 'zzzz9'],
+] }, [{ username: 'demo', displayName: 'תלמיד/ה לדוגמה' }]);
+ok('קובץ עם פרטי כניסה מוכנים - נלקחים כמו שהם',
+  creds.mode === 'credentials' && creds.valid[0]?.username === 'roni' && creds.valid[0]?.password === 'abcd1',
+  JSON.stringify(creds));
+ok('שם משתמש עם רווח נדחה', creds.invalid.some(r => /רווח/.test(r.reason)));
+ok('שם משתמש תפוס נדחה ולא מקבל סיומת', creds.invalid.some(r => /תפוס/.test(r.reason)));
+
+const missingCols = buildImport({ rows: [['שם', 'טלפון'], ['x', '1']] });
+ok('קובץ בלי העמודות הנדרשות - הודעה ברורה', /ת\.ז|כיתה/.test(missingCols.error || ''), missingCols.error);
+
+let xlsError = '';
+try { await readSpreadsheet(new File([new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0, 0, 0, 0])], 'old.xls')); }
+catch (e) { xlsError = e.message; }
+ok('קובץ xls ישן - מבקש לשמור כ-xlsx', /xlsx/.test(xlsError), xlsError);
+
+const credCsv = credentialsCsv([{ grade: 'ט1', displayName: 'נועה "הגדולה" כהן', username: 'נועה482', password: '070311' }]);
+ok('קובץ פרטי הכניסה נפתח נכון בעברית ב-Excel',
+  credCsv.startsWith('﻿') && credCsv.includes('"נועה ""הגדולה"" כהן"'));
 
 // -------------------------------------------------------------- דוח
 export function runAndReport(root) {

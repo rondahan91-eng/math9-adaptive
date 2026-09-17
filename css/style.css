@@ -270,6 +270,33 @@ tbody tr:hover { background: var(--surface-2); }
 
 .center-page { max-width: 400px; margin: 3.5rem auto; }
 
+/* -------------------------------------------------------------- ניהול תלמידים */
+.table-wrap { overflow-x: auto; }
+.drop {
+  display: flex; flex-direction: column; align-items: center; gap: .3rem;
+  padding: 1.6rem 1rem; text-align: center; cursor: pointer;
+  border: 2px dashed var(--border-strong); border-radius: var(--radius);
+  background: var(--surface-2); color: var(--text); font-size: 1rem;
+}
+.drop:hover { border-color: var(--accent); background: var(--accent-soft); }
+.grid-form {
+  display: grid; gap: .7rem; align-items: end;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+.grid-form label input { margin-top: .25rem; }
+details summary { cursor: pointer; }
+.print-only { display: none; }
+
+/* רשימת פרטי הכניסה מודפסת לבד - בלי כותרת האתר ובלי שאר המסך */
+@media print {
+  .app-header, .no-print, .toast { display: none !important; }
+  .print-only { display: block; }
+  body, main { background: #fff; padding: 0; }
+  .card { box-shadow: none; border: none; padding: 0; }
+  tbody tr:hover { background: none; }
+  tr { break-inside: avoid; }
+}
+
 @media (max-width: 560px) {
   .exercise-expr { font-size: 1.5rem; white-space: normal; }
   main { padding: 1rem .8rem 3rem; }

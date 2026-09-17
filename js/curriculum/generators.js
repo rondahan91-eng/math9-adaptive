@@ -392,65 +392,6 @@ export const GENERATORS = {
     });
   },
 
-  // ---------------------------------------------------------- חישוב בראש
-  // הנוסחה אינה רק מניפולציה אלגברית - היא כלי חישוב. 104·96 בראש זה
-  // (100+4)(100−4) = 10000 − 16. מופיע בשני דפי העבודה, בשתי הרמות.
-  'mental-mult'(rng, level) {
-    const ask = 'חשבו ללא מחשבון, בעזרת נוסחאות הכפל המקוצר:';
-
-    if (level >= 5) {
-      const c = pick(rng, [50, 60, 70, 80, 90, 100]);
-      const d = ri(rng, 2, 9);
-      const hi = c + d, lo = c - d;
-      const value = hi * hi - lo * lo;
-      return ex({
-        prompt: ask,
-        exprText: `${hi}^2 - ${lo}^2`,
-        mode: 'equivalent',
-        target: evalPoly(String(value)),
-        answerText: String(value),
-        solutionText: `${hi}^2 - ${lo}^2 = (${hi} - ${lo})(${hi} + ${lo}) = ${hi - lo} · ${hi + lo} = ${value}`,
-        rule: 'a² − b² = (a − b)(a + b). הפרש של שני ריבועים הוא מכפלת ההפרש בסכום.',
-        wrongs: [wrong('diff-subtract-first', String((hi - lo) * (hi - lo)))],
-      });
-    }
-
-    let c, d, square;
-    if (level <= 1)      { c = ri(rng, 2, 9) * 10; d = ri(rng, 1, 3); square = false; }
-    else if (level === 2){ c = pick(rng, [100, 1000]); d = ri(rng, 2, 9); square = false; }
-    else if (level === 3){ c = ri(rng, 2, 9) * 10; d = ri(rng, 1, 3); square = true; }
-    else if (rng() < 0.5){ c = ri(rng, 3, 9) * 10; d = ri(rng, 4, 9); square = false; }
-    else                 { c = pick(rng, [100, 200]); d = ri(rng, 2, 6); square = true; }
-
-    if (square) {
-      const s = coin(rng);
-      const n = c + s * d;
-      const value = n * n;
-      return ex({
-        prompt: ask,
-        exprText: `${n}^2`,
-        mode: 'equivalent',
-        target: evalPoly(String(value)),
-        answerText: String(value),
-        solutionText: `${n}^2 = (${c} ${s > 0 ? '+' : '−'} ${d})^2 = ${c * c} ${s > 0 ? '+' : '−'} ${2 * c * d} + ${d * d} = ${value}`,
-        rule: '(a ± b)² = a² ± 2ab + b². בוחרים a עגול, ו-b קטן.',
-        wrongs: [wrong('sq-no-middle', String(c * c + d * d))],
-      });
-    }
-
-    const value = c * c - d * d;
-    return ex({
-      prompt: ask,
-      exprText: `${c + d} · ${c - d}`,
-      mode: 'equivalent',
-      target: evalPoly(String(value)),
-      answerText: String(value),
-      solutionText: `${c + d} · ${c - d} = (${c} + ${d})(${c} - ${d}) = ${c * c} - ${d * d} = ${value}`,
-      rule: '(a + b)(a − b) = a² − b². מחפשים את המספר העגול שנמצא בדיוק באמצע בין השניים.',
-      wrongs: [wrong('sum-of-squares', String(c * c + d * d))],
-    });
-  },
-
   // ---------------------------------------------------------- השלמת זהות
   // הכיוון ההפוך. תלמיד ששינן נוסחה ולא הבין אותה פותח סוגריים בלי בעיה
   // ונתקע כאן, ולכן זו השאלה המאבחנת ביותר ביחידה.

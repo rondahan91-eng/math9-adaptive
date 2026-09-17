@@ -49,13 +49,6 @@ export const SKILLS = [
     stage: 'נוסחאות הכפל המקוצר',
   },
   {
-    id: 'mental-mult',
-    title: 'חישוב בראש',
-    short: '104 · 96 = 10000 − 16',
-    prereqs: ['diff-squares-expand'],
-    stage: 'נוסחאות הכפל המקוצר',
-  },
-  {
     id: 'complete-identity',
     title: 'השלמת זהות',
     short: 'הכיוון ההפוך: ( ? + 3)² = x² + 6x + 9',

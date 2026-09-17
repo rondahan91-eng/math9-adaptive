@@ -127,7 +127,12 @@ function jsonResponse(obj) {
 function routeAction(action, p) {
   switch (action) {
     case 'authenticateUser': return authenticateUser(p.username, p.password);
-    case 'createNewStudent': return createNewStudent(p.username, p.password, p.displayName, p.grade);
+    case 'createNewStudent':
+      requireAdmin(p.token);
+      return createNewStudent(p.username, p.password, p.displayName, p.grade);
+    case 'importStudents': return importStudents(p.students, p.token);
+    case 'listStudents': requireAdmin(p.token); return listStudents();
+    case 'resetPassword': return resetPassword(p.studentId, p.password, p.token);
     case 'saveProgress': return saveProgress(p.studentId, p.state);
     case 'fetchMyProgress': return fetchMyProgress(p.studentId);
     case 'fetchClassProgress': return fetchClassProgress();
@@ -271,6 +276,79 @@ function requireAdmin(token) {
     throw new Error('פג תוקף ההתחברות. יש להתחבר מחדש');
   }
   return saved;
+}
+
+// -------------------------------------------------------------- ניהול תלמידים
+// כל הפעולות כאן דורשות אסימון מורה. בלי זה כל מי שקורא את קוד המקור היה
+// יכול ליצור לעצמו חשבונות או לאפס סיסמה של חבר/ה.
+
+var MAX_IMPORT = 400;
+
+/**
+ * הוספת תלמידים בבת אחת. שם משתמש שכבר קיים מדולג ומדווח - לא נדרס -
+ * כך שייבוא חוזר של אותו קובץ אינו יוצר כפילויות.
+ * כל השורות נכתבות בפעולה אחת: appendRow לכל שורה איטי מאוד ב-Apps Script.
+ */
+function importStudents(students, token) {
+  requireAdmin(token);
+  if (!students || !students.length) throw new Error('לא התקבלו תלמידים');
+  if (students.length > MAX_IMPORT) throw new Error('אפשר לייבא עד ' + MAX_IMPORT + ' תלמידים בבת אחת');
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sheet = getSheet(SHEET_USERS);
+    var taken = {};
+    sheetToObjects(sheet).forEach(function (u) { taken[String(u.username).toLowerCase()] = true; });
+
+    var rows = [], added = [], skipped = [];
+    for (var i = 0; i < students.length; i++) {
+      var s = students[i] || {};
+      var username = String(s.username || '').trim();
+      var password = String(s.password || '');
+      if (!username || !password) { skipped.push({ username: username, reason: 'חסר שם משתמש או סיסמה' }); continue; }
+      if (taken[username.toLowerCase()]) { skipped.push({ username: username, reason: 'כבר קיים במערכת' }); continue; }
+      taken[username.toLowerCase()] = true;
+      var studentId = 's_' + Utilities.getUuid().slice(0, 8);
+      var displayName = String(s.displayName || username).trim();
+      var grade = String(s.grade || '').trim();
+      rows.push([studentId, username, sha256(password), 'student', displayName, grade, new Date()]);
+      added.push({ studentId: studentId, username: username, displayName: displayName, grade: grade });
+    }
+    if (rows.length) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    }
+    return { added: added, skipped: skipped };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** רשימת התלמידים - בלי גיבוב הסיסמה. */
+function listStudents() {
+  return sheetToObjects(getSheet(SHEET_USERS))
+    .filter(function (u) { return u.role === 'student'; })
+    .map(function (u) {
+      return {
+        studentId: u.studentId, username: u.username, displayName: u.displayName,
+        grade: u.grade || '', createdAt: u.createdAt ? new Date(u.createdAt).getTime() : null,
+      };
+    });
+}
+
+function resetPassword(studentId, password, token) {
+  requireAdmin(token);
+  if (!studentId || !password) throw new Error('חסר תלמיד או סיסמה');
+  if (String(password).length < 4) throw new Error('הסיסמה קצרה מדי (לפחות 4 תווים)');
+  var sheet = getSheet(SHEET_USERS);
+  var values = sheet.getDataRange().getValues();
+  for (var r = 1; r < values.length; r++) {
+    if (String(values[r][0]) !== String(studentId)) continue;
+    if (values[r][3] !== 'student') throw new Error('אפשר לאפס רק סיסמה של תלמיד/ה');
+    sheet.getRange(r + 1, 3).setValue(sha256(String(password)));
+    return { ok: true };
+  }
+  throw new Error('התלמיד/ה לא נמצא/ה');
 }
 
 function createNewStudent(username, password, displayName, grade) {

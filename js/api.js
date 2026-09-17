@@ -62,6 +62,41 @@ async function devCall(action, payload) {
       return safe;
     }
 
+    case 'listStudents':
+      return devUsers().filter(u => u.role === 'student')
+        .map(({ password, role, ...safe }) => safe);
+
+    case 'importStudents': {
+      const users = devUsers();
+      const taken = new Set(users.map(u => u.username.toLowerCase()));
+      const added = [], skipped = [];
+      for (const s of payload.students || []) {
+        const username = String(s.username || '').trim();
+        if (!username || !s.password) { skipped.push({ username, reason: 'חסר שם משתמש או סיסמה' }); continue; }
+        if (taken.has(username.toLowerCase())) { skipped.push({ username, reason: 'כבר קיים במערכת' }); continue; }
+        taken.add(username.toLowerCase());
+        const student = {
+          studentId: 's_' + Math.random().toString(36).slice(2, 10),
+          username, password: String(s.password), role: 'student',
+          displayName: s.displayName || username, grade: s.grade || '',
+        };
+        users.push(student);
+        added.push({ studentId: student.studentId, username, displayName: student.displayName, grade: student.grade });
+      }
+      LS.write(DEV_USERS_KEY, users);
+      return { added, skipped };
+    }
+
+    case 'resetPassword': {
+      const users = devUsers();
+      const u = users.find(x => x.studentId === payload.studentId && x.role === 'student');
+      if (!u) throw new Error('התלמיד/ה לא נמצא/ה');
+      if (String(payload.password || '').length < 4) throw new Error('הסיסמה קצרה מדי (לפחות 4 תווים)');
+      u.password = String(payload.password);
+      LS.write(DEV_USERS_KEY, users);
+      return { ok: true };
+    }
+
     case 'createNewStudent': {
       const users = devUsers();
       if (users.some(x => x.username.toLowerCase() === String(payload.username).trim().toLowerCase())) {
@@ -128,8 +163,11 @@ async function devCall(action, payload) {
 // -------------------------------------------------------------- ה-API הציבורי
 export const api = {
   authenticateUser: (username, password) => call('authenticateUser', { username, password }),
-  createNewStudent: (username, password, displayName, grade) =>
-    call('createNewStudent', { username, password, displayName, grade }),
+  createNewStudent: (username, password, displayName, grade, token) =>
+    call('createNewStudent', { username, password, displayName, grade, token }),
+  importStudents: (students, token) => call('importStudents', { students, token }),
+  listStudents: (token) => call('listStudents', { token }),
+  resetPassword: (studentId, password, token) => call('resetPassword', { studentId, password, token }),
   saveProgress: (studentId, state) => call('saveProgress', { studentId, state }),
   fetchMyProgress: (studentId) => call('fetchMyProgress', { studentId }),
   fetchClassProgress: () => call('fetchClassProgress', {}),
