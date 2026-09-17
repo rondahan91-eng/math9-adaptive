@@ -56,7 +56,9 @@ export function renderStudents(root, ctx) {
         <h2>הוספה מקובץ Excel</h2>
         <p style="margin-top:0">מעלים את רשימת התלמידים כפי שיוצאה ממערכת בית הספר.
         העמודות הנדרשות: <strong>שם פרטי</strong>, <strong>שם משפחה</strong>,
-        <strong>ת.ז</strong>, <strong>תאריך לידה</strong>, <strong>כיתה</strong>.</p>
+        <strong>ת.ז</strong>, <strong>תאריך לידה</strong>, <strong>כיתה</strong>.
+        <a href="templates/students-template.xlsx" download>הורדת תבנית Excel מוכנה</a>
+        (עם גיליון הוראות).</p>
         <div class="note-warn" style="margin-bottom:.8rem">
           <strong>פרטי הכניסה נוצרים אוטומטית, כמו במערכת האלקטרוניקה:</strong><br>
           שם משתמש = שם פרטי + 3 הספרות האחרונות של ת.ז (למשל <span dir="ltr">נועה482</span>)<br>

@@ -560,6 +560,15 @@ try { await readSpreadsheet(new File([new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0,
 catch (e) { xlsError = e.message; }
 ok('קובץ xls ישן - מבקש לשמור כ-xlsx', /xlsx/.test(xlsError), xlsError);
 
+// התבנית שהמורה מורידה מהמסך - ריקה וממולאת
+const blankRes = await fetch('../templates/students-template.xlsx');
+const blankTpl = buildImport(await readSpreadsheet(new File([await blankRes.arrayBuffer()], 'template.xlsx')));
+ok('התבנית הריקה מזוהה (בלי שגיאת עמודות)', !blankTpl.error && blankTpl.valid.length === 0, blankTpl.error);
+const filledTpl = buildImport(await readSpreadsheet(await fetchFile('template-filled.xlsx')));
+ok('תבנית ממולאת נקלטת, עם ת.ז שמתחילה ב-0',
+  filledTpl.valid.length === 1 && filledTpl.valid[0].username === 'שקד678' && filledTpl.valid[0].password === '090411',
+  JSON.stringify(filledTpl.valid[0] || filledTpl.error || filledTpl.invalid));
+
 const credCsv = credentialsCsv([{ grade: 'ט1', displayName: 'נועה "הגדולה" כהן', username: 'נועה482', password: '070311' }]);
 ok('קובץ פרטי הכניסה נפתח נכון בעברית ב-Excel',
   credCsv.startsWith('﻿') && credCsv.includes('"נועה ""הגדולה"" כהן"'));
