@@ -63,6 +63,9 @@ async function devCall(action, payload) {
       return safe;
     }
 
+    case 'version':
+      return { version: CONFIG.REQUIRED_BACKEND, note: 'מצב פיתוח מקומי' };
+
     case 'listStudents':
       return devUsers().filter(u => u.role === 'student')
         .map(({ password, role, ...safe }) => safe);
@@ -182,6 +185,7 @@ export const api = {
   saveProgress: (studentId, state) => call('saveProgress', { studentId, state }),
   fetchMyProgress: (studentId) => call('fetchMyProgress', { studentId }),
   fetchClassProgress: () => call('fetchClassProgress', {}),
+  version: () => call('version', {}),
   fetchReveals: () => call('fetchReveals', {}),
   setReveal: (stage, revealed, token) => call('setReveal', { stage, revealed, token }),
   tutorStatus: () => call('tutorStatus', {}),

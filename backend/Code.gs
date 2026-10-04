@@ -12,6 +12,12 @@
  * ==========================================================================
  */
 
+// גרסת הקוד הזה. מספר הגרסה ש-Apps Script מציג בפריסה אינו מעיד על התוכן,
+// ולכן הגרסה מוצהרת כאן ומוצגת בפתיחת כתובת ה-exec בדפדפן. אחרי כל שינוי
+// מהותי בקובץ - להעלות את המספר ואת התיאור.
+var CODE_VERSION = '4';
+var CODE_VERSION_NOTE = 'מיזוג התקדמות וגיבוי יומי';
+
 var SHEET_USERS = 'Users';
 var SHEET_PROGRESS = 'Progress';
 var SHEET_TUTOR = 'TutorUsage';
@@ -115,7 +121,8 @@ function doPost(e) {
 
 function doGet() {
   return ContentService
-    .createTextOutput('לומדת מתמטיקה ט׳ - API פעיל. יש לשלוח בקשות POST בלבד.')
+    .createTextOutput('לומדת מתמטיקה ט׳ - API פעיל. יש לשלוח בקשות POST בלבד.'
+      + '\n\nגרסת הקוד: ' + CODE_VERSION + ' (' + CODE_VERSION_NOTE + ')')
     .setMimeType(ContentService.MimeType.TEXT);
 }
 
@@ -126,6 +133,7 @@ function jsonResponse(obj) {
 
 function routeAction(action, p) {
   switch (action) {
+    case 'version': return { version: CODE_VERSION, note: CODE_VERSION_NOTE };
     case 'authenticateUser': return authenticateUser(p.username, p.password);
     case 'createNewStudent':
       requireAdmin(p.token);

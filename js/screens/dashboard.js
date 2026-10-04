@@ -18,15 +18,42 @@ import { CONFIG } from '../config.js';
 export function renderDashboard(root, ctx) {
   root.innerHTML = `<div class="card"><p class="muted">טוען נתוני כיתה…</p></div>`;
 
-  api.fetchClassProgress()
-    .then(rows => paint(root, ctx, rows))
-    .catch(err => {
-      toast(err.message || 'שגיאה בטעינת הנתונים', 'err');
-      root.innerHTML = `<div class="card"><p class="muted">לא הצלחתי לטעון את נתוני הכיתה.</p></div>`;
+  // שתי הבקשות יוצאות יחד ומרונדרות יחד, אחרת ההתראה על גרסת השרת הייתה
+  // נמחקת ברגע שנתוני הכיתה מגיעים ומציירים מחדש את המסך
+  Promise.allSettled([api.fetchClassProgress(), backendWarning()])
+    .then(([progress, warning]) => {
+      const warn = warning.status === 'fulfilled' ? warning.value : '';
+      if (progress.status === 'fulfilled') return paint(root, ctx, progress.value, warn);
+      toast(progress.reason?.message || 'שגיאה בטעינת הנתונים', 'err');
+      root.innerHTML = warn +
+        `<div class="card"><p class="muted">לא הצלחתי לטעון את נתוני הכיתה.</p></div>`;
     });
 }
 
-function paint(root, ctx, rows) {
+/**
+ * הקוד באתר מתעדכן מיד, אבל קובץ השרת מתעדכן רק כשמדביקים ומפרסים אותו
+ * ידנית. בלי ההשוואה הזו פיצ'ר שלם יכול לשתוק בשקט - למשל מיזוג ההתקדמות,
+ * שבלעדיו השרת ממשיך לדרוס עבודה של תלמידים.
+ */
+async function backendWarning() {
+  let serverVersion;
+  try {
+    serverVersion = (await api.version())?.version ?? 'לא ידועה';
+  } catch {
+    serverVersion = 'ישנה יותר';   // גרסה שאינה מכירה את הפעולה 'version' בכלל
+  }
+  if (String(serverVersion) === String(CONFIG.REQUIRED_BACKEND)) return '';
+  return `<div class="card"><div class="note-warn">
+    <strong>קובץ השרת אינו מעודכן</strong>
+    האתר מצפה לגרסה ${escapeHtml(CONFIG.REQUIRED_BACKEND)}, ובשרת יש גרסה
+    ${escapeHtml(String(serverVersion))}. חלק מהיכולות אינן פעילות — ובכללן
+    שמירת ההתקדמות המוגנת מפני דריסה.<br>
+    <span class="muted">לתיקון: להדביק מחדש את <code>backend/Code.gs</code>, ואז
+    Deploy → Manage deployments → ✏️ → Version: <strong>New version</strong>.</span>
+  </div></div>`;
+}
+
+function paint(root, ctx, rows, warning = '') {
   const students = rows.map(r => ({ ...r, state: normalizeState(r.state) }));
   const withData = students.filter(s => s.state.history?.length || Object.values(s.state.skills).some(x => x.attempts > 0));
 
@@ -51,6 +78,7 @@ function paint(root, ctx, rows) {
     .sort((a, b) => (b.open - b.mastered) - (a.open - a.mastered));
 
   root.innerHTML = `
+    ${warning}
     <div class="card">
       <h1>מעקב כיתה</h1>
       <p class="muted" style="margin:0">
