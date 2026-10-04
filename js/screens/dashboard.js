@@ -39,7 +39,19 @@ async function backendWarning() {
   let serverVersion;
   try {
     serverVersion = (await api.version())?.version ?? 'לא ידועה';
-  } catch {
+  } catch (err) {
+    // כתובת שאינה קיימת היא תקלה אחרת לגמרי מגרסה ישנה, והיא קרתה כאן כמה
+    // פעמים: פריסה כ-"New deployment" יוצרת כתובת חדשה והישנה מתה.
+    if (/שגיאת רשת/.test(err?.message || '')) {
+      return `<div class="card"><div class="note-warn">
+        <strong>כתובת השרת אינה קיימת יותר</strong>
+        האתר פונה לכתובת שכבר לא עונה. זה קורה כשפורסים את הסקריפט דרך
+        <strong>New deployment</strong>, שיוצר כתובת חדשה ומבטל את הקודמת.
+        ההתקדמות של התלמידים נשמרת אצלם במכשיר ותיטען לשרת ברגע שהחיבור יחזור.<br>
+        <span class="muted">לתיקון: לפרוס דרך Deploy → Manage deployments → ✏️ →
+        Version: <strong>New version</strong>, ששומר על אותה כתובת.</span>
+      </div></div>`;
+    }
     serverVersion = 'ישנה יותר';   // גרסה שאינה מכירה את הפעולה 'version' בכלל
   }
   if (String(serverVersion) === String(CONFIG.REQUIRED_BACKEND)) return '';
