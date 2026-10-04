@@ -133,6 +133,7 @@ function routeAction(action, p) {
     case 'importStudents': return importStudents(p.students, p.token);
     case 'listStudents': requireAdmin(p.token); return listStudents();
     case 'resetPassword': return resetPassword(p.studentId, p.password, p.token);
+    case 'resetProgress': return resetProgress(p.studentId, p.token);
     case 'saveProgress': return saveProgress(p.studentId, p.state);
     case 'fetchMyProgress': return fetchMyProgress(p.studentId);
     case 'fetchClassProgress': return fetchClassProgress();
@@ -367,20 +368,164 @@ function createNewStudent(username, password, displayName, grade) {
 }
 
 // -------------------------------------------------------------- התקדמות
+/**
+ * שמירת התקדמות. השרת *ממזג* ולא דורס: מצב שהגיע מדפדפן אחד לעולם אינו
+ * מוחק עבודה שנשמרה מדפדפן אחר, וגם לא מצב ישן שנשלח באיחור אחרי תקלת
+ * רשת. זו ההגנה האחרונה על שנה שלמה של עבודה, והיא בשרת דווקא - כי על
+ * הלקוח אי אפשר לסמוך.
+ *
+ * מחיקה מכוונת של התקדמות נעשית ב-resetProgress, שדורש אסימון מורה.
+ */
 function saveProgress(studentId, state) {
   if (!studentId) throw new Error('חסר מזהה תלמיד');
-  var sheet = getSheet(SHEET_PROGRESS);
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sheet = getSheet(SHEET_PROGRESS);
+    var values = sheet.getDataRange().getValues();
+    for (var r = 1; r < values.length; r++) {
+      if (values[r][0] !== studentId) continue;
+      var existing = null;
+      try { existing = JSON.parse(values[r][1]); } catch (e) { existing = null; }
+      var merged = mergeStates(existing, state || null);
+      sheet.getRange(r + 1, 2).setValue(stateToJson(merged));
+      sheet.getRange(r + 1, 3).setValue(new Date());
+      maybeBackup();
+      return { ok: true, merged: !!existing };
+    }
+    sheet.appendRow([studentId, stateToJson(state || {}), new Date()]);
+    maybeBackup();
+    return { ok: true, merged: false };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** תא בגיליון מוגבל ל-50,000 תווים. גוזמים היסטוריה לפני שמתקרבים לגבול. */
+function stateToJson(state) {
   var json = JSON.stringify(state || {});
+  while (json.length > 45000 && state && state.history && state.history.length > 20) {
+    state.history = state.history.slice(Math.ceil(state.history.length / 2));
+    json = JSON.stringify(state);
+  }
+  return json;
+}
+
+/** איפוס מכוון של תלמיד/ה - הדרך היחידה למחוק התקדמות. */
+function resetProgress(studentId, token) {
+  requireAdmin(token);
+  if (!studentId) throw new Error('חסר מזהה תלמיד');
+  var sheet = getSheet(SHEET_PROGRESS);
   var values = sheet.getDataRange().getValues();
   for (var r = 1; r < values.length; r++) {
-    if (values[r][0] === studentId) {
-      sheet.getRange(r + 1, 2).setValue(json);
-      sheet.getRange(r + 1, 3).setValue(new Date());
-      return { ok: true };
-    }
+    if (String(values[r][0]) !== String(studentId)) continue;
+    backupNow('לפני איפוס ' + studentId);
+    sheet.getRange(r + 1, 2).setValue('');
+    sheet.getRange(r + 1, 3).setValue(new Date());
+    return { ok: true };
   }
-  sheet.appendRow([studentId, json, new Date()]);
   return { ok: true };
+}
+
+// -------------------------------------------------------------- מיזוג מצבים
+// העתק נאמן של js/learn/merge.js בגרסת ES5. העיקרון: מספר הניסיונות של
+// תלמיד/ה לעולם אינו קטן, ולכן כל מונה נלקח במקסימום וההסתברות נלקחת מהצד
+// שראה יותר ניסיונות. שינוי כאן מחייב שינוי גם שם.
+var HISTORY_LIMIT = 300;
+
+function mergeStates(a, b) {
+  if (!a || typeof a !== 'object') return b;
+  if (!b || typeof b !== 'object') return a;
+  var out = { skills: {}, misconceptions: {}, history: [], tutorUsage: null };
+
+  var ids = {}, id;
+  for (id in (a.skills || {})) ids[id] = true;
+  for (id in (b.skills || {})) ids[id] = true;
+  for (id in ids) out.skills[id] = mergeSkill((a.skills || {})[id], (b.skills || {})[id]);
+
+  var mids = {};
+  for (id in (a.misconceptions || {})) mids[id] = true;
+  for (id in (b.misconceptions || {})) mids[id] = true;
+  for (id in mids) {
+    out.misconceptions[id] = mergeMisconception((a.misconceptions || {})[id], (b.misconceptions || {})[id]);
+  }
+
+  var seen = {}, all = (a.history || []).concat(b.history || []);
+  for (var i = 0; i < all.length; i++) {
+    var h = all[i];
+    if (!h) continue;
+    seen[num(h.at) + '|' + h.skillId + '|' + h.level] = h;
+  }
+  var merged = [];
+  for (var k in seen) merged.push(seen[k]);
+  merged.sort(function (x, y) { return num(x.at) - num(y.at); });
+  out.history = merged.slice(Math.max(0, merged.length - HISTORY_LIMIT));
+
+  out.tutorUsage = mergeUsage(a.tutorUsage, b.tutorUsage);
+  return out;
+}
+
+function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
+
+function mergeSkill(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  var newer = num(b.attempts) >= num(a.attempts) ? b : a;
+  return {
+    p: typeof newer.p === 'number' ? newer.p : Math.max(num(a.p), num(b.p)),
+    attempts: Math.max(num(a.attempts), num(b.attempts)),
+    correct: Math.max(num(a.correct), num(b.correct)),
+    streak: num(newer.streak),
+    maxCorrectLevel: Math.max(num(a.maxCorrectLevel), num(b.maxCorrectLevel))
+  };
+}
+
+function mergeMisconception(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  var newer = num(b.lastAt) >= num(a.lastAt) ? b : a;
+  var out = {};
+  for (var k in newer) out[k] = newer[k];
+  out.seen = Math.max(num(a.seen), num(b.seen));
+  return out;
+}
+
+function mergeUsage(a, b) {
+  if (!a) return b || null;
+  if (!b) return a;
+  if (a.date === b.date) return { date: a.date, count: Math.max(num(a.count), num(b.count)) };
+  return String(b.date) > String(a.date) ? b : a;
+}
+
+// -------------------------------------------------------------- גיבוי
+// עותק יומי של גיליון ההתקדמות, בתוך אותו קובץ. אם מצב כלשהו ייהרס - יש
+// למה לחזור. נשמרים 14 העותקים האחרונים.
+var BACKUP_PREFIX = 'גיבוי ';
+var BACKUP_KEEP = 14;
+
+function maybeBackup() {
+  var props = PropertiesService.getScriptProperties();
+  var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  if (props.getProperty('LAST_BACKUP') === today) return;
+  props.setProperty('LAST_BACKUP', today);   // גם אם הגיבוי ייכשל, לא ננסה שוב היום
+  try { backupNow(today); } catch (e) { /* גיבוי אינו שובר שמירה */ }
+}
+
+function backupNow(label) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var source = ss.getSheetByName(SHEET_PROGRESS);
+  if (!source) return;
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+  var copy = source.copyTo(ss);
+  copy.setName(BACKUP_PREFIX + stamp + (label ? ' ' + label : ''));
+  copy.hideSheet();
+
+  var sheets = ss.getSheets(), backups = [];
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].getName().indexOf(BACKUP_PREFIX) === 0) backups.push(sheets[i]);
+  }
+  backups.sort(function (x, y) { return x.getName() < y.getName() ? -1 : 1; });
+  while (backups.length > BACKUP_KEEP) ss.deleteSheet(backups.shift());
 }
 
 function fetchMyProgress(studentId) {

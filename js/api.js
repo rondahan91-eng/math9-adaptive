@@ -6,6 +6,7 @@
 
 import { CONFIG, isDevMode } from './config.js';
 import { STAGES, STAGES_REVEALED_BY_DEFAULT } from './curriculum/skills.js';
+import { mergeStates } from './learn/merge.js';
 
 async function call(action, payload = {}) {
   if (isDevMode()) return devCall(action, payload);
@@ -117,8 +118,17 @@ async function devCall(action, payload) {
     }
 
     case 'saveProgress': {
+      // ממזגים גם כאן, כדי שמצב הפיתוח יתנהג כמו השרת
       const all = LS.read(DEV_PROGRESS_KEY, {});
-      all[payload.studentId] = { state: payload.state, updatedAt: Date.now() };
+      const existing = all[payload.studentId]?.state || null;
+      all[payload.studentId] = { state: mergeStates(existing, payload.state), updatedAt: Date.now() };
+      LS.write(DEV_PROGRESS_KEY, all);
+      return { ok: true, merged: !!existing };
+    }
+
+    case 'resetProgress': {
+      const all = LS.read(DEV_PROGRESS_KEY, {});
+      delete all[payload.studentId];
       LS.write(DEV_PROGRESS_KEY, all);
       return { ok: true };
     }
@@ -168,6 +178,7 @@ export const api = {
   importStudents: (students, token) => call('importStudents', { students, token }),
   listStudents: (token) => call('listStudents', { token }),
   resetPassword: (studentId, password, token) => call('resetPassword', { studentId, password, token }),
+  resetProgress: (studentId, token) => call('resetProgress', { studentId, token }),
   saveProgress: (studentId, state) => call('saveProgress', { studentId, state }),
   fetchMyProgress: (studentId) => call('fetchMyProgress', { studentId }),
   fetchClassProgress: () => call('fetchClassProgress', {}),

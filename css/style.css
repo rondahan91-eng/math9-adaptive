@@ -136,6 +136,11 @@ label { font-size: .9rem; color: var(--text-dim); display: block; margin-bottom:
   padding: .3rem .5rem;
   font-size: 1rem;
 }
+/* מצב חזקה פעיל: הספרות הבאות ייכתבו בכתב עילי */
+.symbol-bar button.on,
+.symbol-bar button.on:hover:not(:disabled) {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
 
 /* -------------------------------------------------------------- משוב */
 .feedback { border-radius: var(--radius); padding: .9rem 1rem; margin-top: 1rem; border: 1px solid; }

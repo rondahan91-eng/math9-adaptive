@@ -6,6 +6,7 @@ import { CONFIG, isDevMode } from './config.js';
 import { api } from './api.js';
 import { toast } from './ui.js';
 import { emptyState, normalizeState } from './learn/mastery.js';
+import { mergeStates } from './learn/merge.js';
 import { renderAuth } from './screens/auth.js';
 import { renderHome } from './screens/home.js';
 import { renderLesson } from './screens/lesson.js';
@@ -23,6 +24,7 @@ const nav = document.getElementById('nav');
 const ctx = {
   user: null,
   state: emptyState(),
+  synced: false,   // האם ידוע לנו מה יש בשרת. בלי זה אסור לשלוח אליו
   tutor: { available: false, reason: '' },
   navigate,
   save: saveProgress,
@@ -43,7 +45,22 @@ let current = { name: 'home', params: {} };
 function navigate(name, params = {}) {
   current = { name, params };
   render();
+  retrySync();
 }
+
+/**
+ * כשאין חיבור, מנסים שוב ברקע: במעבר בין מסכים (לכל היותר פעם בחצי דקה)
+ * וברגע שהדפדפן מדווח שהרשת חזרה. כך תלמיד/ה שהתחיל/ה לעבוד בלי רשת
+ * מתחבר/ת חזרה בלי לעשות כלום, והעבודה שבתור נשלחת.
+ */
+let lastRetry = 0;
+async function retrySync() {
+  if (!ctx.user || ctx.synced || Date.now() - lastRetry < 30000) return;
+  lastRetry = Date.now();
+  await loadProgress();
+  if (ctx.synced) { render(); toast('החיבור חזר. ההתקדמות נשמרה', 'ok'); }
+}
+window.addEventListener('online', () => { lastRetry = 0; retrySync(); });
 
 function render() {
   if (!ctx.user) {
@@ -87,6 +104,7 @@ function logout() {
   localStorage.removeItem(CONFIG.SESSION_KEY);
   ctx.user = null;
   ctx.state = emptyState();
+  ctx.synced = false;
   resetReveals();
   render();
 }
@@ -110,29 +128,73 @@ async function loadReveals() {
   }
 }
 
+/**
+ * ההתקדמות חייבת לשרוד שנה שלמה, ולכן יש כאן שלוש הגנות:
+ *
+ *  1. מה שנמצא בדפדפן ומה שנמצא בשרת *ממוזגים*, ולא דורסים זה את זה.
+ *  2. אם הטעינה מהשרת נכשלה - לא שולחים לשרת כלום. בלי זה, תקלת רשת
+ *     בהתחברות הייתה גורמת לתרגיל הראשון לדרוס שנה של עבודה.
+ *  3. שמירה שנכשלה נשמרת בתור ונשלחת שוב בהזדמנות הבאה.
+ */
+const localKey = () => CONFIG.STATE_KEY + ':' + ctx.user.studentId;
+const pendingKey = () => CONFIG.STATE_KEY + ':pending:' + ctx.user.studentId;
+
+function readLocalState() {
+  try {
+    const raw = localStorage.getItem(localKey());
+    return raw ? normalizeState(JSON.parse(raw)) : null;
+  } catch { return null; }
+}
+
 async function loadProgress() {
-  // האחסון המקומי הוא מקור אמת מיידי; השרת מסונכרן ברקע ומנצח אם הוא עדכני
-  const localRaw = localStorage.getItem(CONFIG.STATE_KEY + ':' + ctx.user.studentId);
-  if (localRaw) {
-    try { ctx.state = normalizeState(JSON.parse(localRaw)); } catch { /* מתעלמים */ }
-  }
-  if (ctx.user.role === 'admin') return;
+  const local = readLocalState();
+  if (local) ctx.state = local;
+  if (ctx.user.role === 'admin') { ctx.synced = true; return; }
+
   try {
     const remote = await api.fetchMyProgress(ctx.user.studentId);
-    if (remote) ctx.state = normalizeState(remote);
-  } catch (err) {
-    if (!isDevMode()) toast('לא הצלחתי לטעון התקדמות מהשרת — עובדים מקומית', 'err');
+    // "אין רשומה" הוא מצב תקין של תלמיד/ה חדש/ה, ולא כישלון
+    ctx.state = remote ? normalizeState(mergeStates(local, normalizeState(remote))) : (local || emptyState());
+    ctx.synced = true;
+    await flushPending();
+  } catch {
+    ctx.synced = isDevMode();
+    if (!isDevMode()) {
+      toast('אין חיבור לשרת. העבודה נשמרת במכשיר הזה בלבד', 'err');
+    }
   }
+}
+
+/** שמירה שלא הגיעה לשרת ממתינה כאן עד שהחיבור חוזר. */
+async function flushPending() {
+  const raw = localStorage.getItem(pendingKey());
+  if (!raw) return;
+  try {
+    const queued = JSON.parse(raw);
+    // השרת ממזג, ולכן שליחה של מצב ישן אינה יכולה למחוק עבודה חדשה יותר
+    await api.saveProgress(ctx.user.studentId, queued);
+    localStorage.removeItem(pendingKey());
+  } catch { /* עדיין אין חיבור - נשאר בתור */ }
 }
 
 let saveTimer = null;
 function saveProgress() {
   if (!ctx.user) return;
-  localStorage.setItem(CONFIG.STATE_KEY + ':' + ctx.user.studentId, JSON.stringify(ctx.state));
+  try { localStorage.setItem(localKey(), JSON.stringify(ctx.state)); } catch { /* אחסון מלא */ }
+  if (!ctx.synced) {
+    // טרם ידוע מה יש בשרת: שומרים בתור ולא שולחים, כדי לא לדרוס
+    try { localStorage.setItem(pendingKey(), JSON.stringify(ctx.state)); } catch { /* אחסון מלא */ }
+    return;
+  }
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
-    try { await api.saveProgress(ctx.user.studentId, ctx.state); }
-    catch { /* המצב כבר נשמר מקומית - ננסה שוב בשמירה הבאה */ }
+    const snapshot = JSON.stringify(ctx.state);
+    try {
+      await api.saveProgress(ctx.user.studentId, JSON.parse(snapshot));
+      localStorage.removeItem(pendingKey());
+    } catch {
+      try { localStorage.setItem(pendingKey(), snapshot); } catch { /* אחסון מלא */ }
+    }
   }, 1200);
 }
 

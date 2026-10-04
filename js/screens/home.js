@@ -37,6 +37,10 @@ export function renderHome(root, ctx) {
         <button class="primary" data-practice ${nextSkill ? '' : 'disabled'}>המשך לתרגל</button>
       </div>
       ${progressBar(overallProgress(state))}
+      ${ctx.synced ? '' : `<p class="muted" style="margin-top:.5rem;margin-bottom:0">
+        <span class="badge warn">אין חיבור לשרת</span>
+        העבודה נשמרת במכשיר הזה ותישלח אוטומטית כשהחיבור יחזור.
+      </p>`}
       ${tutorMisconfigured(ctx) ? `<p class="muted" style="margin-top:.5rem;margin-bottom:0">
         <span class="badge warn">המורה הפרטי לא זמין</span>
         ${escapeHtml(ctx.tutor.reason || '')}

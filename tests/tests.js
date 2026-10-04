@@ -16,6 +16,8 @@ import { GENERATORS, generateExercise } from '../js/curriculum/generators.js';
 import { MISCONCEPTIONS } from '../js/curriculum/misconceptions.js';
 import { SKILLS, topoOrder, STAGES, STAGES_REVEALED_BY_DEFAULT } from '../js/curriculum/skills.js';
 import { setReveals, resetReveals, revealedStages, isSkillRevealed } from '../js/learn/reveals.js';
+import { mergeStates, HISTORY_LIMIT } from '../js/learn/merge.js';
+import { symbolBar, wireSymbolBar } from '../js/ui.js';
 import { readSpreadsheet } from '../js/students/xlsx.js';
 import { buildImport, parseDob, normalizeGrade, credentialsCsv } from '../js/students/importRules.js';
 import { renderExpr, renderInline } from '../js/math/render.js';
@@ -485,6 +487,155 @@ ok('שלב שנחשף בלי הבסיס שלו - גלוי אבל נעול',
   isSkillRevealed('factor-common') && !isUnlocked(emptyState(), 'factor-common'));
 
 resetReveals();
+
+// -------------------------------------------------------------- שימור התקדמות
+// הדרישה: התקדמות של תלמיד/ה חייבת לשרוד שנה שלמה. כל בדיקה כאן מתארת דרך
+// ממשית שבה היא הייתה יכולה להימחק.
+group('שימור התקדמות לאורך השנה');
+
+const workedState = (over) => {
+  const s = emptyState();
+  s.skills['monomial-mult'] = { p: 0.97, attempts: 12, correct: 11, streak: 4, maxCorrectLevel: 5 };
+  s.skills['sq-sum'] = { p: 0.8, attempts: 5, correct: 4, streak: 2, maxCorrectLevel: 3 };
+  s.history = [
+    { at: 1000, skillId: 'monomial-mult', level: 1, correct: true, misconceptionId: null },
+    { at: 2000, skillId: 'sq-sum', level: 2, correct: false, misconceptionId: 'sq-no-middle' },
+  ];
+  s.misconceptions = { 'sq-no-middle': { skillId: 'sq-sum', strength: 0.6, seen: 2, lastAt: 2000 } };
+  return Object.assign(s, over);
+};
+
+const year = workedState();
+const blank = emptyState();
+ok('מצב ריק שנשלח אחרי תקלה אינו מוחק עבודה',
+  mergeStates(year, blank).skills['monomial-mult'].attempts === 12);
+ok('...וגם בכיוון ההפוך', mergeStates(blank, year).skills['monomial-mult'].attempts === 12);
+ok('...וההיסטוריה נשמרת', mergeStates(blank, year).history.length === 2);
+
+// שני מכשירים: בבית נפתרו תרגילים, ובכיתה נפתרו אחרים
+const home = workedState();
+home.skills['sq-sum'] = { p: 0.95, attempts: 9, correct: 8, streak: 3, maxCorrectLevel: 4 };
+home.history = [...home.history, { at: 3000, skillId: 'sq-sum', level: 3, correct: true, misconceptionId: null }];
+const school = workedState();
+school.skills['sq-diff'] = { p: 0.7, attempts: 3, correct: 2, streak: 1, maxCorrectLevel: 2 };
+school.history = [...school.history, { at: 2500, skillId: 'sq-diff', level: 1, correct: true, misconceptionId: null }];
+
+const both = mergeStates(home, school);
+ok('עבודה משני מכשירים מצטרפת, ולא מתחלפת',
+  both.skills['sq-sum'].attempts === 9 && both.skills['sq-diff'].attempts === 3,
+  JSON.stringify({ sum: both.skills['sq-sum'].attempts, diff: both.skills['sq-diff'].attempts }));
+ok('...וההיסטוריה מאוחדת לפי זמן',
+  both.history.map(h => h.at).join(',') === '1000,2000,2500,3000', both.history.map(h => h.at).join(','));
+ok('...ואותו אירוע אינו נספר פעמיים', both.history.filter(h => h.at === 1000).length === 1);
+ok('רמת הראיה הגבוהה ביותר נשמרת', both.skills['sq-sum'].maxCorrectLevel === 4);
+ok('המיזוג סימטרי במונים',
+  JSON.stringify(mergeStates(school, home).skills['sq-sum']) === JSON.stringify(both.skills['sq-sum']));
+
+ok('מיזוג לעולם אינו מקטין ניסיונות', (() => {
+  for (const [x, y] of [[year, blank], [blank, year], [home, school], [school, home]]) {
+    const m = mergeStates(x, y);
+    for (const id of Object.keys(m.skills)) {
+      const a = x.skills?.[id]?.attempts || 0, b = y.skills?.[id]?.attempts || 0;
+      if (m.skills[id].attempts < Math.max(a, b)) return false;
+    }
+  }
+  return true;
+})());
+
+ok('תפיסה מוטעית שמורה עם הספירה הגבוהה',
+  mergeStates(year, { ...blank, misconceptions: { 'sq-no-middle': { skillId: 'sq-sum', strength: 0.3, seen: 5, lastAt: 5000 } } })
+    .misconceptions['sq-no-middle'].seen === 5);
+ok('מכסת שאלות: אותו יום - הספירה הגבוהה',
+  mergeStates({ ...blank, tutorUsage: { date: '2026-10-04', count: 3 } },
+    { ...blank, tutorUsage: { date: '2026-10-04', count: 7 } }).tutorUsage.count === 7);
+ok('מכסת שאלות: יום חדש מנצח',
+  mergeStates({ ...blank, tutorUsage: { date: '2026-10-04', count: 9 } },
+    { ...blank, tutorUsage: { date: '2026-10-05', count: 1 } }).tutorUsage.date === '2026-10-05');
+
+ok('היסטוריה ארוכה נגזמת ושומרת את האחרונים', (() => {
+  const many = { ...blank, history: Array.from({ length: 500 }, (_, i) => ({ at: i, skillId: 'sq-sum', level: 1, correct: true })) };
+  const m = mergeStates(many, blank);
+  return m.history.length === HISTORY_LIMIT && m.history[m.history.length - 1].at === 499;
+})());
+
+ok('מצב ממוזג עובר נרמול ונשאר תקין',
+  Object.keys(normalizeState(mergeStates(home, school)).skills).length === SKILLS.length);
+
+// -------------------------------------------------------------- כתיבת חזקות
+// הסימן ^ לעולם לא נשאר בשדה: הוא רק מפעיל "מצב חזקה", וממנו והלאה כל ספרה
+// נכתבת בכתב עילי. הבדיקות מדמות אירועי קלט אמיתיים של הדפדפן.
+group('כתיבת חזקות בשדה התשובה');
+
+function makeField() {
+  const host = document.createElement('div');
+  host.innerHTML = `${symbolBar()}<input class="answer-input" type="text">`;
+  const input = host.querySelector('input');
+  wireSymbolBar(host, input);
+  return { host, input };
+}
+function typeInto(input, text) {
+  for (const ch of text) {
+    const caret = input.selectionStart ?? input.value.length;
+    input.value = input.value.slice(0, caret) + ch + input.value.slice(caret);
+    input.setSelectionRange(caret + 1, caret + 1);
+    input.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: ch, bubbles: true }));
+  }
+  return input.value;
+}
+function backspace(input) {
+  const caret = input.selectionStart ?? input.value.length;
+  input.value = input.value.slice(0, caret - 1) + input.value.slice(caret);
+  input.setSelectionRange(caret - 1, caret - 1);
+  input.dispatchEvent(new InputEvent('input', { inputType: 'deleteContentBackward', bubbles: true }));
+  return input.value;
+}
+const powerButton = (host) => host.querySelector('[data-power]');
+
+{
+  const { input } = makeField();
+  ok('^ אינו נשאר בשדה, והספרה הופכת לעילית', typeInto(input, '9x^4') === '9x⁴', input.value);
+}
+{
+  const { input } = makeField();
+  ok('חזקה דו-ספרתית', typeInto(input, 'x^12') === 'x¹²', input.value);
+}
+{
+  const { input } = makeField();
+  ok('תו שאינו ספרה מסיים את מצב החזקה', typeInto(input, 'x^2+3x') === 'x²+3x', input.value);
+}
+{
+  const { host, input } = makeField();
+  powerButton(host).click();
+  typeInto(input, '4');
+  ok('כפתור xⁿ מפעיל מצב חזקה בלי להקליד תו', input.value === '⁴', input.value);
+  ok('...והכפתור מסומן כפעיל', powerButton(host).getAttribute('aria-pressed') === 'true');
+  typeInto(input, 'x');
+  ok('...והסימון מתבטל כשהמצב מסתיים', powerButton(host).getAttribute('aria-pressed') === 'false');
+}
+{
+  const { input } = makeField();
+  typeInto(input, '5x^4');
+  backspace(input);
+  ok('מחיקת ספרת החזקה משאירה את מצב החזקה פעיל', typeInto(input, '7') === '5x⁷', input.value);
+}
+{
+  const { input } = makeField();
+  typeInto(input, '5x^4');
+  backspace(input); backspace(input);
+  ok('מחיקה מעבר לחזקה מסיימת את המצב', typeInto(input, '7') === '57', input.value);
+}
+{
+  const { input } = makeField();
+  input.value = '3x^2 + x^10';
+  input.setSelectionRange(input.value.length, input.value.length);
+  input.dispatchEvent(new InputEvent('input', { inputType: 'insertFromPaste', bubbles: true }));
+  ok('הדבקה של טקסט עם ^ מנורמלת לכתב עילי', input.value === '3x² + x¹⁰', input.value);
+}
+{
+  const { input } = makeField();
+  ok('התשובה שנכתבת בכתב עילי נבדקת נכון',
+    checkAnswer(typeInto(input, '9X^4'), evalPoly('9x^4'), 'expand').ok, input.value);
+}
 
 // -------------------------------------------------------------- ייבוא תלמידים
 group('ייבוא תלמידים מ-Excel');

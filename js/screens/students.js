@@ -188,7 +188,10 @@ export function renderStudents(root, ctx) {
               <td>${escapeHtml(s.displayName)}</td>
               <td>${escapeHtml(s.grade)}</td>
               <td dir="ltr">${escapeHtml(s.username)}</td>
-              <td><button class="small ghost" data-reset="${escapeHtml(s.studentId)}">איפוס סיסמה</button></td>
+              <td>
+                <button class="small ghost" data-reset="${escapeHtml(s.studentId)}">איפוס סיסמה</button>
+                <button class="small ghost" data-wipe="${escapeHtml(s.studentId)}">איפוס התקדמות</button>
+              </td>
             </tr>`).join('')}</tbody>
           </table></div>`}
       </div>`;
@@ -293,6 +296,21 @@ export function renderStudents(root, ctx) {
       try {
         await api.resetPassword(s.studentId, password.trim(), token());
         toast(`הסיסמה של ${s.displayName} עודכנה`, 'ok');
+      } catch (err) {
+        toast(err.message || 'האיפוס נכשל', 'err');
+      }
+      btn.disabled = false;
+    }));
+
+    // השרת ממזג התקדמות ולעולם אינו דורס, ולכן זו הדרך היחידה למחוק אותה.
+    // היא מכוונת, דורשת אישור, ומשאירה גיבוי בגיליון לפני המחיקה.
+    root.querySelectorAll('[data-wipe]').forEach(btn => btn.addEventListener('click', async () => {
+      const s = view.students.find(x => x.studentId === btn.dataset.wipe);
+      if (!confirm(`למחוק את כל ההתקדמות של ${s.displayName}?\n\nכל התרגילים, השליטה והטעויות יימחקו והתלמיד/ה יתחיל/תתחיל מאפס.\nלפני המחיקה נשמר גיבוי בגיליון. אי אפשר לבטל מכאן.`)) return;
+      btn.disabled = true;
+      try {
+        await api.resetProgress(s.studentId, token());
+        toast(`ההתקדמות של ${s.displayName} אופסה`, 'ok');
       } catch (err) {
         toast(err.message || 'האיפוס נכשל', 'err');
       }

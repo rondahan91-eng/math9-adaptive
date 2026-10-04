@@ -218,9 +218,10 @@ export function renderPractice(root, ctx, params = {}) {
    * החישוב עצמה, ולכן הגנרטור יכול לספק solutionText משלו.
    */
   function solutionLine() {
-    return ex.solutionText
-      ? renderExpr(ex.solutionText)
-      : `${renderExpr(ex.exprText)} = ${renderExpr(ex.answerText)}`;
+    if (ex.solutionText) return renderExpr(ex.solutionText);
+    // שני הביטויים חייבים לשבת בתוך בידוד LTR אחד. אחרת, בתוך פסקה עברית,
+    // הדפדפן מסדר אותם מימין לשמאל ומוצג "9x⁴ = 3x³ · 3x" - הפוך.
+    return `<span dir="ltr" style="unicode-bidi:isolate">${renderExpr(ex.exprText)} = ${renderExpr(ex.answerText)}</span>`;
   }
 
   // -------------------------------------------------------------- בדיקה
@@ -238,7 +239,8 @@ export function renderPractice(root, ctx, params = {}) {
         <strong>לא הצלחתי לקרוא את מה שכתבת</strong>
         ${escapeHtml(result.message || '')}<br>
         <span class="muted">אפשר להיעזר בכפתורי הסמלים שמתחת לשדה.
-        כפל אפשר לכתוב פשוט: 3x, או (x+1)(x-2).</span>
+        כפל אפשר לכתוב פשוט: 3x, או (x+1)(x-2).
+        חזקה: לוחצים על xⁿ ואז מקלידים את המספר.</span>
       </div>`);
       return;
     }
